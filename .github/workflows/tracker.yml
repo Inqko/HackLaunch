@@ -3,7 +3,7 @@ name: AI Project Progress Tracker
 on:
   pull_request:
     types: [opened, closed, synchronize]
-  workflow_dispatch: # Чтобы запускать вручную в любой момент
+  workflow_dispatch:
 
 jobs:
   track-progress:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Скачивает всю историю коммитов для git log
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -36,25 +38,35 @@ jobs:
           import os, json, subprocess
           import google.generativeai as genai
 
-          repo = os.environ['REPO']
+          repo = os.environ.get('REPO')
           pr_num = os.environ.get('PR_NUMBER')
+          api_key = os.environ.get('GEMINI_API_KEY')
 
-          # 1. Собираем список задач (Issues)
-          issues_raw = subprocess.check_output(
-              ["gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number,title,state,body"]
-          )
-          issues = json.loads(issues_raw)
+          if not api_key:
+              raise ValueError("Переменная GEMINI_API_KEY не задана в GitHub Secrets!")
+
+          # 1. Собираем список задач (Issues) с обработкой пустых списков
+          try:
+              issues_raw = subprocess.check_output(
+                  ["gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number,title,state,body"]
+              )
+              issues = json.loads(issues_raw)
+          except Exception as e:
+              issues = []
 
           # 2. Собираем недавние коммиты
-          commits_raw = subprocess.check_output(
-              ["git", "log", "-n", "10", "--oneline"]
-          ).decode('utf-8')
+          try:
+              commits_raw = subprocess.check_output(
+                  ["git", "log", "-n", "10", "--oneline"]
+              ).decode('utf-8')
+          except Exception:
+              commits_raw = "Нет коммитов в ветке."
 
           context = f"=== ISSUES / TASKS ===\n{json.dumps(issues, ensure_ascii=False, indent=2)}\n\n"
           context += f"=== RECENT COMMITS ===\n{commits_raw}"
 
           # 3. Запрос к Gemini
-          genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+          genai.configure(api_key=api_key)
           model = genai.GenerativeModel('gemini-1.5-flash')
 
           prompt = f"""
@@ -73,9 +85,9 @@ jobs:
           response = model.generate_content(prompt)
           report = f"### 🤖 Отчет ИИ-трекера прогресса\n\n{response.text}"
 
-          # 4. Публикуем комментарий
+          # 4. Вывод результата в логи и публикация в PR при наличии
+          print(report)
+
           if pr_num:
               subprocess.run(["gh", "pr", "comment", pr_num, "--repo", repo, "--body", report])
-          else:
-              print(report)
           EOF
