@@ -17,15 +17,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Скачивает всю историю коммитов для git log
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install google-generativeai
+        run: pip install google-genai
 
       - name: Analyze progress & comment
         env:
@@ -36,25 +36,25 @@ jobs:
         run: |
           python - << 'EOF'
           import os, json, subprocess
-          import google.generativeai as genai
+          from google import genai
 
           repo = os.environ.get('REPO')
           pr_num = os.environ.get('PR_NUMBER')
           api_key = os.environ.get('GEMINI_API_KEY')
 
           if not api_key:
-              raise ValueError("Переменная GEMINI_API_KEY не задана в GitHub Secrets!")
+              raise ValueError("GEMINI_API_KEY не найден в Secrets!")
 
-          # 1. Собираем список задач (Issues) с обработкой пустых списков
+          # 1. Получаем список Issues
           try:
               issues_raw = subprocess.check_output(
                   ["gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number,title,state,body"]
               )
               issues = json.loads(issues_raw)
-          except Exception as e:
+          except Exception:
               issues = []
 
-          # 2. Собираем недавние коммиты
+          # 2. Получаем коммиты
           try:
               commits_raw = subprocess.check_output(
                   ["git", "log", "-n", "10", "--oneline"]
@@ -65,9 +65,8 @@ jobs:
           context = f"=== ISSUES / TASKS ===\n{json.dumps(issues, ensure_ascii=False, indent=2)}\n\n"
           context += f"=== RECENT COMMITS ===\n{commits_raw}"
 
-          # 3. Запрос к Gemini
-          genai.configure(api_key=api_key)
-          model = genai.GenerativeModel('gemini-1.5-flash')
+          # 3. Запрос через официальный SDK google-genai
+          client = genai.Client(api_key=api_key)
 
           prompt = f"""
           Ты — AI-ассистент команды на 7-часовом хакатоне.
@@ -82,12 +81,21 @@ jobs:
           Формат: Markdown. Не пиши лишней воды, держи фокус на дедлайне.
           """
 
-          response = model.generate_content(prompt)
-          report = f"### 🤖 Отчет ИИ-трекера прогресса\n\n{response.text}"
+          response = client.models.generate_content(
+              model='gemini-2.5-flash',
+              contents=prompt
+          )
 
-          # 4. Вывод результата в логи и публикация в PR при наличии
+          report = f"### 🤖 Отчет ИИ-трекера прогресса\n\n{response.text}"
           print(report)
 
+          # Добавляем отчет в GitHub Actions Step Summary (будет виден на странице запуска)
+          summary_file = os.environ.get('GITHUB_STEP_SUMMARY')
+          if summary_file:
+              with open(summary_file, 'a', encoding='utf-8') as f:
+                  f.write(report + "\n")
+
+          # Если это PR — комментируем в ветку
           if pr_num:
               subprocess.run(["gh", "pr", "comment", pr_num, "--repo", repo, "--body", report])
           EOF
