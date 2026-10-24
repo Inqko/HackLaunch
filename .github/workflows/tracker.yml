@@ -1,0 +1,81 @@
+name: AI Project Progress Tracker
+
+on:
+  pull_request:
+    types: [opened, closed, synchronize]
+  workflow_dispatch: # Чтобы запускать вручную в любой момент
+
+jobs:
+  track-progress:
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install google-generativeai
+
+      - name: Analyze progress & comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          python - << 'EOF'
+          import os, json, subprocess
+          import google.generativeai as genai
+
+          repo = os.environ['REPO']
+          pr_num = os.environ.get('PR_NUMBER')
+
+          # 1. Собираем список задач (Issues)
+          issues_raw = subprocess.check_output(
+              ["gh", "issue", "list", "--repo", repo, "--state", "all", "--json", "number,title,state,body"]
+          )
+          issues = json.loads(issues_raw)
+
+          # 2. Собираем недавние коммиты
+          commits_raw = subprocess.check_output(
+              ["git", "log", "-n", "10", "--oneline"]
+          ).decode('utf-8')
+
+          context = f"=== ISSUES / TASKS ===\n{json.dumps(issues, ensure_ascii=False, indent=2)}\n\n"
+          context += f"=== RECENT COMMITS ===\n{commits_raw}"
+
+          # 3. Запрос к Gemini
+          genai.configure(api_key=os.environ['GEMINI_API_KEY'])
+          model = genai.GenerativeModel('gemini-1.5-flash')
+
+          prompt = f"""
+          Ты — AI-ассистент команды на 7-часовом хакатоне.
+          Оцени текущий прогресс проекта на основе задач и коммитов:
+          {context}
+
+          Сделай краткую, емкую сводку:
+          1. 📊 Текущий процент готовности проекта (оценка).
+          2. ✅ Что уже сделано.
+          3. ⏳ Что сейчас в процессе и что осталось сделать.
+          4. ⚠️ Риски/блокеры (на что обратить внимание, учитывая жесткий дедлайн).
+          Формат: Markdown. Не пиши лишней воды, держи фокус на дедлайне.
+          """
+
+          response = model.generate_content(prompt)
+          report = f"### 🤖 Отчет ИИ-трекера прогресса\n\n{response.text}"
+
+          # 4. Публикуем комментарий
+          if pr_num:
+              subprocess.run(["gh", "pr", "comment", pr_num, "--repo", repo, "--body", report])
+          else:
+              print(report)
+          EOF
