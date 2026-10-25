@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     gitlab_token: str = ""
     gitlab_namespace_id: int | None = None
     use_mock_gitlab: bool = True
+    # Мост задач и issues GitLab. Пустые значения отключают вебхуки/синхронизацию.
+    gitlab_webhook_url: str = ""
+    gitlab_webhook_secret: str = ""
+    gitlab_task_label: str = "hacklaunch"
 
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"

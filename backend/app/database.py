@@ -1,5 +1,6 @@
 from collections.abc import AsyncIterator
 
+from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -18,9 +19,30 @@ async def get_db() -> AsyncIterator[AsyncSession]:
         yield session
 
 
+def _apply_light_migrations(conn) -> None:
+    """Догоняем схему существующей БД без Alembic (каркас).
+
+    create_all не умеет добавлять колонки в уже созданную таблицу, поэтому
+    для старых dev-баз аккуратно добавляем nullable-колонку и уникальный индекс.
+    """
+    inspector = inspect(conn)
+    if "tasks" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("tasks")}
+    if "gitlab_issue_iid" not in columns:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN gitlab_issue_iid INTEGER"))
+    conn.execute(
+        text(
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_tasks_project_gitlab_iid "
+            "ON tasks (project_id, gitlab_issue_iid)"
+        )
+    )
+
+
 async def init_db() -> None:
     # Для каркаса таблицы создаются на старте; Alembic можно подключить позже
     from app import models  # noqa: F401
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_apply_light_migrations)

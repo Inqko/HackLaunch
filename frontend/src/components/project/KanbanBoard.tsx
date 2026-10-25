@@ -1,6 +1,6 @@
-import { Plus } from "lucide-react";
+import { Plus, RefreshCw } from "lucide-react";
 import { useState } from "react";
-import { tasksApi } from "@/api/endpoints";
+import { gitlabApi, tasksApi } from "@/api/endpoints";
 import type { Task, TaskStatus } from "@/api/types";
 import { Button, ErrorText } from "@/components/ui";
 import { useProject } from "@/context/ProjectContext";
@@ -13,6 +13,8 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
   const { project, canEdit } = useProject();
   const [over, setOver] = useState<TaskStatus | null>(null);
   const [adding, setAdding] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
   const members = new Map(project.members.map((m) => [m.user_id, m]));
 
@@ -27,17 +29,42 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
     }
   };
 
+  const syncGitlab = async () => {
+    setSyncing(true);
+    setError("");
+    setNotice("");
+    try {
+      const result = await gitlabApi.sync(project.id);
+      setNotice(
+        `GitLab: создано задач ${result.tasks_created}, обновлено ${result.tasks_updated}, приглашено участников ${result.members_invited}.`,
+      );
+      onChange();
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   return (
     <div>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-lg font-semibold">Доска задач</h2>
         {canEdit && (
-          <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
-            <Plus className="h-4 w-4" /> Задача
-          </Button>
+          <div className="flex items-center gap-2">
+            {project.gitlab_repo_url && (
+              <Button size="sm" variant="outline" onClick={syncGitlab} disabled={syncing}>
+                <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> GitLab
+              </Button>
+            )}
+            <Button size="sm" variant="outline" onClick={() => setAdding(true)}>
+              <Plus className="h-4 w-4" /> Задача
+            </Button>
+          </div>
         )}
       </div>
       <ErrorText>{error}</ErrorText>
+      {notice && <p className="mb-3 text-xs text-emerald-700">{notice}</p>}
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {BOARD_COLUMNS.map((status) => {
           const column = tasks.filter((t) => t.status === status);

@@ -12,6 +12,7 @@ from app.deps import fetch_project
 from app.models import Task, TaskPriority, TaskStatus
 from app.schemas import TaskOut
 from app.services.ai_service import compute_progress, generate_task_drafts
+from app.services.gitlab_service import sync_task_to_gitlab
 
 mcp = FastMCP("HackLaunch AI")
 
@@ -74,6 +75,7 @@ async def create_single_task(
         db.add(task)
         await db.commit()
         await db.refresh(task)
+        await sync_task_to_gitlab(db, task)
         return _task_dict(task)
 
 
@@ -91,6 +93,7 @@ async def assign_task(task_id: int, user_id: int) -> dict:
         task.assignee_id = user_id
         await db.commit()
         await db.refresh(task)
+        await sync_task_to_gitlab(db, task)
         return _task_dict(task)
 
 
@@ -108,6 +111,7 @@ async def update_task_status(task_id: int, new_status: str) -> dict:
         task.status = status
         await db.commit()
         await db.refresh(task)
+        await sync_task_to_gitlab(db, task)
         return _task_dict(task)
 
 

@@ -59,6 +59,8 @@ export interface Task {
   priority: TaskPriority;
   estimated_hours: number;
   created_by_ai: boolean;
+  /** iid issue в GitLab; null — задача еще не синхронизирована */
+  gitlab_issue_iid: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -121,4 +123,11 @@ export interface Analytics {
   total_commits: number;
   total_mrs: number;
   members_stats: MemberStats[];
+}
+
+export interface GitLabSync {
+  members_invited: number;
+  members_skipped: number;
+  tasks_created: number;
+  tasks_updated: number;
 }

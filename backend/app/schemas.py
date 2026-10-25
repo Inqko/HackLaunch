@@ -110,6 +110,8 @@ class TaskOut(ORMModel):
     priority: TaskPriority
     estimated_hours: float
     created_by_ai: bool
+    # Добавлено вместе с мостом GitLab; nullable — контракт обратно совместим
+    gitlab_issue_iid: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -168,6 +170,15 @@ class AIStatusOut(BaseModel):
     ai_health_status: HealthStatus
     ai_progress_score: int
     ai_risks: list[str]
+
+
+# --- GitLab ---
+
+class GitLabSyncOut(BaseModel):
+    members_invited: int
+    members_skipped: int
+    tasks_created: int
+    tasks_updated: int
 
 
 # --- Materials ---
