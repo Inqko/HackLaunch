@@ -13,6 +13,7 @@ import hashlib
 import logging
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Protocol
 from urllib.parse import quote, urlparse
 
@@ -356,23 +357,80 @@ class RealGitLabClient:
             mrs = await self._paginate(
                 client, f"/projects/{gitlab_project_id}/merge_requests", {"state": "all"}
             )
+            accounts = {}
+            for u in users:
+                username = normalize_gitlab_username(u.gitlab_username)
+                if not username:
+                    continue
+                accounts[u.id] = {"username": username}
+                try:
+                    resp = await client.get("/users", params={"username": username})
+                    resp.raise_for_status()
+                    if found := resp.json():
+                        accounts[u.id] = found[0]
+                except httpx.HTTPError:
+                    logger.warning("GitLab user %s lookup failed", username)
 
-        # Коммиты в API не содержат username, сопоставляем по email / имени
+        # Коммиты в API не содержат username, поэтому сопоставляем по email, а если
+        # не вышло — по имени автора. Пустые ключи не участвуют в сравнении: раньше
+        # коммит без email засчитывался первому участнику без gitlab_username
+        by_email: dict[str, int] = {}
+        by_name: dict[str, set[int]] = {}
+        for u in users:
+            account = accounts.get(u.id, {})
+            for email in (u.email, account.get("public_email"), account.get("commit_email")):
+                if email:
+                    by_email.setdefault(email.strip().lower(), u.id)
+            for name in (u.name, account.get("name"), account.get("username")):
+                if name and name.strip():
+                    by_name.setdefault(name.strip().lower(), set()).add(u.id)
+
         for c in commits:
-            for u in users:
-                keys = {u.email.lower(), u.name.lower(), (u.gitlab_username or "").lower()}
-                if c.get("author_email", "").lower() in keys or c.get("author_name", "").lower() in keys:
-                    s = stats[u.id]
-                    s.commits += 1
-                    s.last_activity = max(s.last_activity or "", c.get("committed_date") or "") or None
-                    break
+            # Merge-коммиты создаёт кнопка Merge — это не работа автора, MR учитываем отдельно
+            if len(c.get("parent_ids") or []) > 1:
+                continue
+            user_id = by_email.get((c.get("author_email") or "").strip().lower())
+            if user_id is None:
+                candidates = by_name.get((c.get("author_name") or "").strip().lower(), set())
+                # Одинаковые имена у двух участников — не угадываем
+                user_id = next(iter(candidates)) if len(candidates) == 1 else None
+            if user_id is not None:
+                s = stats[user_id]
+                s.commits += 1
+                s.last_activity = _latest(s.last_activity, c.get("committed_date"))
+
+        by_gitlab_id = {a["id"]: uid for uid, a in accounts.items() if a.get("id") is not None}
+        by_username = {a["username"].lower(): uid for uid, a in accounts.items() if a.get("username")}
         for mr in mrs:
-            author = (mr.get("author") or {}).get("username", "").lower()
-            for u in users:
-                if u.gitlab_username and u.gitlab_username.lower() == author:
-                    stats[u.id].mrs += 1
-                    break
+            # Закрытые без слияния MR не вклад; открытые и влитые — вклад
+            if mr.get("state") == "closed":
+                continue
+            author = mr.get("author") or {}
+            user_id = by_gitlab_id.get(author.get("id")) or by_username.get(
+                (author.get("username") or "").lower()
+            )
+            if user_id is not None:
+                s = stats[user_id]
+                s.mrs += 1
+                s.last_activity = _latest(s.last_activity, mr.get("merged_at") or mr.get("created_at"))
         return stats
+
+
+def _latest(current: str | None, candidate: str | None) -> str | None:
+    """Самая поздняя из двух дат GitLab в UTC ISO.
+
+    Строки сравнивать нельзя: GitLab отдаёт даты коммитов с часовым поясом
+    автора (+03:00), а MR — в UTC (Z), и «позже» по строке не значит позже.
+    """
+    if not candidate:
+        return current
+    try:
+        moment = datetime.fromisoformat(candidate.replace("Z", "+00:00")).astimezone(timezone.utc)
+    except ValueError:
+        return current
+    if current and datetime.fromisoformat(current) >= moment:
+        return current
+    return moment.isoformat()
 
 
 # In-memory состояние mock-клиента: живёт в рамках процесса, чтобы демо работало

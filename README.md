@@ -120,17 +120,20 @@ frontend/src/
 | POST | `/api/projects/{id}/members` | CAPTAIN |
 | PATCH/DELETE | `/api/projects/{id}/members/{user_id}` | CAPTAIN |
 | GET | `/api/projects/{id}/tasks` | участник (без `AI_DRAFT`) |
-| POST | `/api/projects/{id}/tasks` | CAPTAIN, MEMBER |
+| POST | `/api/projects/{id}/tasks` | CAPTAIN; MEMBER — только на себя |
 | GET | `/api/projects/{id}/tasks/my` | участник |
 | GET | `/api/projects/{id}/tasks/drafts` | CAPTAIN |
 | POST | `/api/projects/{id}/tasks/approve-batch` | CAPTAIN (`id: null` = своя задача) |
-| PATCH/DELETE | `/api/tasks/{task_id}` | CAPTAIN, MEMBER (черновики — только CAPTAIN) |
+| PATCH | `/api/tasks/{task_id}` | CAPTAIN; MEMBER — только свои задачи и без смены исполнителя (черновики — только CAPTAIN) |
+| DELETE | `/api/tasks/{task_id}` | CAPTAIN |
 | POST | `/api/projects/{id}/ai/generate-tasks` | CAPTAIN |
 | POST | `/api/projects/{id}/ai/refresh-status` | CAPTAIN, MEMBER |
 | GET | `/api/projects/{id}/materials` | участник (`target_url` по роли, VIEWER не видит `edit_url`) |
-| POST/DELETE | `/api/projects/{id}/materials[/{mid}]` | CAPTAIN, MEMBER |
-| GET | `/api/projects/{id}/analytics` | участник |
-| GET | `/api/projects/{id}/analytics/export?format=csv\|json` | участник |
+| POST | `/api/projects/{id}/materials` | CAPTAIN, MEMBER |
+| DELETE | `/api/projects/{id}/materials/{mid}` | CAPTAIN; MEMBER — только добавленные им |
+| GET | `/api/projects/{id}/analytics` | CAPTAIN — вся команда; MEMBER — только своя строка (`scope: PERSONAL`) |
+| GET | `/api/projects/{id}/analytics/export?format=csv\|json` | CAPTAIN |
+| POST | `/api/projects/{id}/gitlab/sync` | CAPTAIN |
 
 > Где исходные промпты расходились с ТЗ, взят вариант из ТЗ: поле материалов `target_url` (не `access_url`), типы `GOOGLE_SLIDES/GOOGLE_DOCS/FIGMA/OTHER`, личные задачи по `/api/projects/{id}/tasks/my`, пересчет здоровья — `POST /ai/refresh-status`.
 

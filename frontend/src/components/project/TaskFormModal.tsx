@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import type { TaskInput, TaskPriority } from "@/api/types";
 import { Button, ErrorText, Input, Label, Modal, Select, Textarea } from "@/components/ui";
+import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
 import { PRIORITY_LABELS, SPEC_LABELS } from "@/lib/labels";
 import { errorMessage } from "@/lib/utils";
@@ -14,8 +15,11 @@ export function TaskFormModal({
   onClose: () => void;
   onSubmit: (data: TaskInput) => Promise<void>;
 }) {
-  const { project } = useProject();
-  const [form, setForm] = useState({ title: "", description: "", assignee_id: "", priority: "MEDIUM" as TaskPriority, estimated_hours: "1" });
+  const { project, isCaptain } = useProject();
+  const { user } = useAuth();
+  // Участник заводит задачи только себе — исполнителя выбирает капитан
+  const defaultAssignee = isCaptain ? "" : String(user?.id ?? "");
+  const [form, setForm] = useState({ title: "", description: "", assignee_id: defaultAssignee, priority: "MEDIUM" as TaskPriority, estimated_hours: "1" });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const assignable = project.members.filter((m) => m.role !== "VIEWER");
@@ -32,7 +36,7 @@ export function TaskFormModal({
         priority: form.priority,
         estimated_hours: Number(form.estimated_hours) || 1,
       });
-      setForm({ title: "", description: "", assignee_id: "", priority: "MEDIUM", estimated_hours: "1" });
+      setForm({ title: "", description: "", assignee_id: defaultAssignee, priority: "MEDIUM", estimated_hours: "1" });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -54,7 +58,7 @@ export function TaskFormModal({
         <div className="grid grid-cols-3 gap-3">
           <div>
             <Label>Исполнитель</Label>
-            <Select value={form.assignee_id} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
+            <Select value={form.assignee_id} disabled={!isCaptain} onChange={(e) => setForm({ ...form, assignee_id: e.target.value })}>
               <option value="">—</option>
               {assignable.map((m) => (
                 <option key={m.user_id} value={m.user_id}>

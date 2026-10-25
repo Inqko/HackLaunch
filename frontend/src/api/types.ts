@@ -75,6 +75,8 @@ export interface Task {
   gitlab_mr_iid: number | null;
   created_at: string;
   updated_at: string;
+  /** Когда задача перешла в DONE; null — не закрыта */
+  completed_at: string | null;
 }
 
 export interface TaskInput {
@@ -110,6 +112,8 @@ export interface Material {
   target_url: string;
   access_mode: "EDIT" | "VIEW";
   can_edit: boolean;
+  /** Капитан — любой материал, участник — только добавленный им */
+  can_delete: boolean;
   created_at: string;
 }
 
@@ -130,6 +134,8 @@ export interface MemberStats {
 
 export interface Analytics {
   project_id: number;
+  /** TEAM — вся команда (капитан), PERSONAL — только своя статистика (участник) */
+  scope: "TEAM" | "PERSONAL";
   total_tasks: number;
   completed_tasks: number;
   total_commits: number;

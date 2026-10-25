@@ -28,7 +28,9 @@ async def submit_for_review(
     task_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     """Участник запушил код — отправить задачу на ИИ-ревью (то же делают вебхук и опрос веток)."""
-    task, project, _ = await _load(db, task_id, user, (ProjectRole.CAPTAIN, ProjectRole.MEMBER))
+    task, project, me = await _load(db, task_id, user, (ProjectRole.CAPTAIN, ProjectRole.MEMBER))
+    if me.role != ProjectRole.CAPTAIN and task.assignee_id != user.id:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Отправить на ревью можно только свою задачу")
     if not project.gitlab_project_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,

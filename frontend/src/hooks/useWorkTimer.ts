@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 
-const ACTIVE_KEY = "hl_cabinet_timer_v1";
-const LOG_KEY = "hl_cabinet_time_log_v1";
+// Ключи привязаны к пользователю: иначе на общем компьютере второй аккаунт
+// продолжал чужой таймер и видел чужое время
+const activeKey = (userId: number | undefined) => `hl_cabinet_timer_v2:${userId ?? "anon"}`;
+const logKey = (userId: number | undefined) => `hl_cabinet_time_log_v2:${userId ?? "anon"}`;
 
 export interface ActiveTimer {
   taskId: number;
@@ -24,9 +26,9 @@ function todayKey(date = new Date()): string {
   return `${y}-${m}-${d}`;
 }
 
-function readActive(): ActiveTimer | null {
+function readActive(key: string): ActiveTimer | null {
   try {
-    const raw = localStorage.getItem(ACTIVE_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<ActiveTimer>;
     if (typeof parsed.taskId !== "number" || typeof parsed.startedAt !== "number") return null;
@@ -41,15 +43,29 @@ function readActive(): ActiveTimer | null {
   }
 }
 
-function readLog(): TimeLog {
+function readLog(key: string): TimeLog {
   try {
-    const raw = localStorage.getItem(LOG_KEY);
+    const raw = localStorage.getItem(key);
     if (!raw) return {};
     const parsed = JSON.parse(raw) as TimeLog;
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch {
     return {};
   }
+}
+
+/** Режет интервал по полуночи, чтобы ночная сессия не записалась целиком в «сегодня» */
+function splitByDay(startMs: number, endMs: number): [string, number][] {
+  const parts: [string, number][] = [];
+  let cursor = startMs;
+  while (cursor < endMs) {
+    const day = new Date(cursor);
+    const nextMidnight = new Date(day.getFullYear(), day.getMonth(), day.getDate() + 1).getTime();
+    const until = Math.min(endMs, nextMidnight);
+    parts.push([todayKey(day), Math.floor((until - cursor) / 1000)]);
+    cursor = until;
+  }
+  return parts;
 }
 
 function write(key: string, value: unknown) {
@@ -65,10 +81,20 @@ function write(key: string, value: unknown) {
  * Состояние и накопленное время хранятся в localStorage, поэтому переживают
  * перезагрузку страницы. Сервер о времени не знает — это личная статистика.
  */
-export function useWorkTimer() {
-  const [active, setActive] = useState<ActiveTimer | null>(readActive);
-  const [log, setLog] = useState<TimeLog>(readLog);
+export function useWorkTimer(userId: number | undefined) {
+  const ACTIVE_KEY = activeKey(userId);
+  const LOG_KEY = logKey(userId);
+  const [active, setActive] = useState<ActiveTimer | null>(() => readActive(ACTIVE_KEY));
+  const [log, setLog] = useState<TimeLog>(() => readLog(LOG_KEY));
   const [now, setNow] = useState(() => Date.now());
+  const [loadedKey, setLoadedKey] = useState(LOG_KEY);
+
+  // Сменился пользователь — подгружаем его таймер, а не пишем свой лог под чужим ключом
+  if (loadedKey !== LOG_KEY) {
+    setLoadedKey(LOG_KEY);
+    setActive(readActive(ACTIVE_KEY));
+    setLog(readLog(LOG_KEY));
+  }
 
   useEffect(() => {
     if (!active) return;
@@ -78,34 +104,35 @@ export function useWorkTimer() {
   }, [active]);
 
   useEffect(() => {
-    write(LOG_KEY, log);
-  }, [log]);
+    if (loadedKey === LOG_KEY) write(LOG_KEY, log);
+  }, [log, loadedKey, LOG_KEY]);
 
-  const addSeconds = useCallback((timer: ActiveTimer, seconds: number) => {
-    if (seconds <= 0) return;
+  const addInterval = useCallback((timer: ActiveTimer, endMs: number) => {
+    const parts = splitByDay(timer.startedAt, endMs).filter(([, seconds]) => seconds > 0);
+    if (parts.length === 0) return;
     setLog((prev) => {
-      const day = todayKey();
-      const current = prev[day] ?? { total: 0, byTask: {} };
-      return {
-        ...prev,
-        [day]: {
+      const next = { ...prev };
+      for (const [day, seconds] of parts) {
+        const current = next[day] ?? { total: 0, byTask: {} };
+        next[day] = {
           total: current.total + seconds,
           byTask: { ...current.byTask, [timer.taskId]: (current.byTask[timer.taskId] ?? 0) + seconds },
-        },
-      };
+        };
+      }
+      return next;
     });
   }, []);
 
   const stop = useCallback(() => {
     if (!active) return;
-    addSeconds(active, Math.floor((Date.now() - active.startedAt) / 1000));
+    addInterval(active, Date.now());
     setActive(null);
     try {
       localStorage.removeItem(ACTIVE_KEY);
     } catch {
       /* noop */
     }
-  }, [active, addSeconds]);
+  }, [active, addInterval, ACTIVE_KEY]);
 
   const start = useCallback(
     (taskId: number, meta: { title: string; projectName: string }) => {
@@ -116,7 +143,7 @@ export function useWorkTimer() {
       write(ACTIVE_KEY, next);
       setNow(Date.now());
     },
-    [active, stop],
+    [active, stop, ACTIVE_KEY],
   );
 
   const toggle = useCallback(
@@ -129,10 +156,12 @@ export function useWorkTimer() {
 
   const activeSeconds = active ? Math.max(0, Math.floor((now - active.startedAt) / 1000)) : 0;
   const today = log[todayKey()] ?? { total: 0, byTask: {} };
+  // В «сегодня» идёт только часть активной сессии после полуночи
+  const activeToday = active ? (splitByDay(active.startedAt, now).find(([day]) => day === todayKey())?.[1] ?? 0) : 0;
 
-  const todayTotal = today.total + activeSeconds;
+  const todayTotal = today.total + activeToday;
   const secondsForTask = (taskId: number) =>
-    (today.byTask[taskId] ?? 0) + (active?.taskId === taskId ? activeSeconds : 0);
+    (today.byTask[taskId] ?? 0) + (active?.taskId === taskId ? activeToday : 0);
 
   return { active, activeSeconds, todayTotal, secondsForTask, start, stop, toggle };
 }

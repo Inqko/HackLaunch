@@ -11,7 +11,7 @@ import { TaskCard } from "./TaskCard";
 import { TaskFormModal } from "./TaskFormModal";
 
 export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () => void }) {
-  const { project, canEdit } = useProject();
+  const { project, isCaptain, canEdit, canManageTask } = useProject();
   const [over, setOver] = useState<TaskStatus | null>(null);
   const [adding, setAdding] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -22,7 +22,7 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
 
   const moveTo = async (taskId: number, status: TaskStatus) => {
     const task = tasks.find((t) => t.id === taskId);
-    if (!task || task.status === status) return;
+    if (!task || task.status === status || !canManageTask(task)) return;
     try {
       await tasksApi.update(taskId, { status });
       onChange();
@@ -65,7 +65,7 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
         <h2 className="text-lg font-semibold">Доска задач</h2>
         {canEdit && (
           <div className="flex items-center gap-2">
-            {project.gitlab_repo_url && (
+            {isCaptain && project.gitlab_repo_url && (
               <Button size="sm" variant="outline" onClick={syncGitlab} disabled={syncing}>
                 <RefreshCw className={`h-4 w-4 ${syncing ? "animate-spin" : ""}`} /> GitLab
               </Button>
@@ -106,8 +106,8 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
                     key={t.id}
                     task={t}
                     assignee={t.assignee_id ? members.get(t.assignee_id) : undefined}
-                    draggable={canEdit}
-                    onDelete={canEdit ? () => remove(t) : undefined}
+                    draggable={canManageTask(t)}
+                    onDelete={isCaptain ? () => remove(t) : undefined}
                     onOpenReview={() => setReviewTask(t)}
                   />
                 ))}

@@ -31,6 +31,10 @@ def _apply_light_migrations(conn) -> None:
     columns = {column["name"] for column in inspector.get_columns("tasks")}
     if "gitlab_issue_iid" not in columns:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN gitlab_issue_iid INTEGER"))
+    if "completed_at" not in columns:
+        conn.execute(text("ALTER TABLE tasks ADD COLUMN completed_at TIMESTAMP WITH TIME ZONE"))
+        # Для уже закрытых задач лучшее приближение — время последнего изменения
+        conn.execute(text("UPDATE tasks SET completed_at = updated_at WHERE status = 'DONE'"))
     # Колонки ИИ-ревью
     for name, ddl in (
         ("branch_name", "VARCHAR(255)"),

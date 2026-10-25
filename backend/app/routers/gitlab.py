@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal, get_db
-from app.deps import CAN_EDIT, CAPTAIN_ONLY, fetch_project
+from app.deps import CAPTAIN_ONLY, fetch_project
 from app.models import Project, ProjectMember
 from app.schemas import GitLabConnectIn, GitLabConnectOut, GitLabSyncOut
 from app.services import review_service
@@ -72,12 +72,12 @@ async def detach_gitlab_repository(
 @router.post("/api/projects/{project_id}/gitlab/sync", response_model=GitLabSyncOut)
 async def sync_gitlab(
     project_id: int,
-    _: ProjectMember = Depends(CAN_EDIT),
+    _: ProjectMember = Depends(CAPTAIN_ONLY),
     db: AsyncSession = Depends(get_db),
 ):
     """Полная синхронизация: приглашает участников и импортирует issues.
 
-    Доступна CAPTAIN/MEMBER. Ошибки GitLab отдаются как 502, чтобы фронт
+    Только CAPTAIN: синхронизация приглашает людей и меняет задачи всей команды. Ошибки GitLab отдаются как 502, чтобы фронт
     мог показать понятное сообщение, а не 500.
     """
     project = await fetch_project(db, project_id)

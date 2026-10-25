@@ -67,7 +67,7 @@ export function MaterialsWidget() {
                   {m.can_edit ? "Редактировать" : "Только просмотр"}
                 </Button>
               </a>
-              {canEdit && (
+              {m.can_delete && (
                 <button onClick={() => remove(m.id)} className="rounded p-1 hover:bg-slate-100" aria-label="Удалить">
                   <Trash2 className="h-4 w-4 text-slate-400" />
                 </button>

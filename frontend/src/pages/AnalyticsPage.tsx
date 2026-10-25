@@ -9,7 +9,7 @@ import { ROLE_LABELS, SPEC_LABELS } from "@/lib/labels";
 import { errorMessage } from "@/lib/utils";
 
 export default function AnalyticsPage() {
-  const { project } = useProject();
+  const { project, isCaptain } = useProject();
   const [data, setData] = useState<Analytics | null>(null);
   const [error, setError] = useState("");
 
@@ -23,29 +23,36 @@ export default function AnalyticsPage() {
   if (error) return <ErrorText>{error}</ErrorText>;
   if (!data) return <Spinner />;
 
+  const personal = data.scope === "PERSONAL";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold">Вклад команды</h2>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => download("csv")}>
-            <Download className="h-4 w-4" /> Скачать CSV
-          </Button>
-          <Button variant="outline" onClick={() => download("json")}>
-            <Download className="h-4 w-4" /> JSON
-          </Button>
+        <div>
+          <h2 className="text-lg font-semibold">{personal ? "Мой вклад" : "Вклад команды"}</h2>
+          {personal && <p className="text-sm text-slate-500">Статистика всей команды и выгрузка доступны капитану</p>}
         </div>
+        {isCaptain && (
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => download("csv")}>
+              <Download className="h-4 w-4" /> Скачать CSV
+            </Button>
+            <Button variant="outline" onClick={() => download("json")}>
+              <Download className="h-4 w-4" /> JSON
+            </Button>
+          </div>
+        )}
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Всего задач" value={data.total_tasks} />
+        <StatCard label={personal ? "Моих задач" : "Всего задач"} value={data.total_tasks} />
         <StatCard label="Выполнено" value={data.completed_tasks} />
         <StatCard label="Коммитов в GitLab" value={data.total_commits} />
         <StatCard label="Merge Requests" value={data.total_mrs} />
       </div>
 
       <Card>
-        <h3 className="mb-4 font-medium">Задачи и коммиты по участникам</h3>
+        <h3 className="mb-4 font-medium">{personal ? "Задачи и коммиты" : "Задачи и коммиты по участникам"}</h3>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={data.members_stats}>
