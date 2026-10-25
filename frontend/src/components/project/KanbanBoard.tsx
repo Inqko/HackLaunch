@@ -29,6 +29,17 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
     }
   };
 
+  const remove = async (task: Task) => {
+    if (!confirm(`Удалить задачу «${task.title}»?`)) return;
+    setError("");
+    try {
+      await tasksApi.remove(task.id);
+      onChange();
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
+
   const syncGitlab = async () => {
     setSyncing(true);
     setError("");
@@ -89,7 +100,13 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
               </div>
               <div className="space-y-2">
                 {column.map((t) => (
-                  <TaskCard key={t.id} task={t} assignee={t.assignee_id ? members.get(t.assignee_id) : undefined} draggable={canEdit} />
+                  <TaskCard
+                    key={t.id}
+                    task={t}
+                    assignee={t.assignee_id ? members.get(t.assignee_id) : undefined}
+                    draggable={canEdit}
+                    onDelete={canEdit ? () => remove(t) : undefined}
+                  />
                 ))}
               </div>
             </div>

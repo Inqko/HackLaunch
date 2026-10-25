@@ -1,19 +1,43 @@
-import { Clock, Sparkles } from "lucide-react";
+import { Clock, Sparkles, Trash2 } from "lucide-react";
 import type { Member, Task } from "@/api/types";
 import { Badge } from "@/components/ui";
 import { PRIORITY_COLORS, PRIORITY_LABELS, SPEC_LABELS } from "@/lib/labels";
 
-export function TaskCard({ task, assignee, draggable }: { task: Task; assignee?: Member; draggable?: boolean }) {
+export function TaskCard({
+  task,
+  assignee,
+  draggable,
+  onDelete,
+}: {
+  task: Task;
+  assignee?: Member;
+  draggable?: boolean;
+  onDelete?: () => void;
+}) {
   return (
     <div
       draggable={draggable}
       onDragStart={(e) => e.dataTransfer.setData("text/plain", String(task.id))}
-      className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm data-[draggable=true]:cursor-grab"
+      className="group rounded-lg border border-slate-200 bg-white p-3 shadow-sm data-[draggable=true]:cursor-grab"
       data-draggable={draggable}
     >
       <div className="mb-2 flex items-start justify-between gap-2">
         <p className="text-sm font-medium">{task.title}</p>
-        {task.created_by_ai && <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-500" aria-label="Создано ИИ" />}
+        <div className="flex shrink-0 items-center gap-1">
+          {task.created_by_ai && <Sparkles className="h-3.5 w-3.5 text-indigo-500" aria-label="Создано ИИ" />}
+          {onDelete && (
+            // На тач-экранах hover нет, поэтому кнопка скрывается только на широких экранах
+            <button
+              type="button"
+              onClick={onDelete}
+              className="rounded p-0.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 focus:opacity-100 md:opacity-0 md:group-hover:opacity-100"
+              aria-label="Удалить задачу"
+              title="Удалить задачу"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
       </div>
       {task.description && <p className="mb-2 line-clamp-2 text-xs text-slate-500">{task.description}</p>}
       <div className="flex flex-wrap items-center gap-1.5">
