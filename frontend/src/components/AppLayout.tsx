@@ -1,7 +1,8 @@
-import { LogOut, Rocket } from "lucide-react";
-import type { ReactNode } from "react";
+import { KeyRound, LogOut, Rocket } from "lucide-react";
+import { useState, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { ChangePasswordModal } from "./ChangePasswordModal";
 import { Button, Spinner } from "./ui";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -20,6 +21,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
 export function AppLayout() {
   const { user, logout } = useAuth();
+  const [passwordOpen, setPasswordOpen] = useState(false);
   return (
     <div className="min-h-screen">
       <header className="border-b border-slate-200 bg-white">
@@ -30,6 +32,10 @@ export function AppLayout() {
           </Link>
           <div className="flex items-center gap-3 text-sm">
             <span className="hidden text-slate-600 sm:inline">{user?.name}</span>
+            <Button variant="ghost" size="sm" onClick={() => setPasswordOpen(true)} title="Сменить пароль">
+              <KeyRound className="h-4 w-4" />
+              <span className="hidden sm:inline">Пароль</span>
+            </Button>
             <Button variant="ghost" size="sm" onClick={logout}>
               <LogOut className="h-4 w-4" /> Выйти
             </Button>
@@ -39,6 +45,7 @@ export function AppLayout() {
       <main className="mx-auto max-w-7xl px-4 py-6">
         <Outlet />
       </main>
+      <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </div>
   );
 }

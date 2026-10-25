@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
-from app.schemas import LoginIn, RegisterIn, TokenOut, UserOut, UserUpdate
+from app.schemas import LoginIn, PasswordChangeIn, RegisterIn, TokenOut, UserOut, UserUpdate
 from app.security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -54,3 +54,20 @@ async def update_me(
     await db.commit()
     await db.refresh(user)
     return user
+
+
+@router.post("/users/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    data: PasswordChangeIn,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Текущий пароль указан неверно")
+    if data.new_password == data.current_password:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "Новый пароль должен отличаться от текущего"
+        )
+    user.password_hash = hash_password(data.new_password)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

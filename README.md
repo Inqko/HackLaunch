@@ -103,6 +103,7 @@ frontend/src/
 | :-- | :-- | :-- |
 | POST | `/api/auth/register`, `/api/auth/login` | все |
 | GET/PATCH | `/api/users/me` | авторизованный |
+| POST | `/api/users/me/password` | авторизованный |
 | GET/POST | `/api/projects` | авторизованный (создатель → CAPTAIN) |
 | GET | `/api/projects/{id}` | участник проекта (+ `my_role`) |
 | POST | `/api/projects/{id}/members` | CAPTAIN |
