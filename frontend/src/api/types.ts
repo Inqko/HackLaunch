@@ -20,6 +20,11 @@ export interface TokenResponse {
   user: User;
 }
 
+export interface PasswordCodeSent {
+  message: string;
+  debug_code: string | null;
+}
+
 export interface Member {
   user_id: number;
   name: string;

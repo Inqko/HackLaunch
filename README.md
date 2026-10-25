@@ -26,6 +26,8 @@ npm run dev                   # http://localhost:5173, /api проксирует
 
 Чтобы включить настоящий ИИ, пропишите `GEMINI_API_KEY` в `backend/.env`. Для настоящего GitLab: `GITLAB_TOKEN`, `USE_MOCK_GITLAB=false` и при желании `GITLAB_NAMESPACE_ID` (группа хакатона).
 
+Пароли проверяются по политике (8+ символов, строчная/заглавная буква, цифра, спецсимвол). Смена и восстановление пароля подтверждаются кодом из письма: настройте `SMTP_*` в `backend/.env`. Без SMTP код пишется в лог бэкенда, а при `EMAIL_DEBUG=true` (по умолчанию) показывается в интерфейсе как демо-код.
+
 **MCP-сервер** (Claude Desktop / Cursor):
 
 ```json
@@ -109,7 +111,9 @@ frontend/src/
 | :-- | :-- | :-- |
 | POST | `/api/auth/register`, `/api/auth/login` | все |
 | GET/PATCH | `/api/users/me` | авторизованный |
-| POST | `/api/users/me/password` | авторизованный |
+| POST | `/api/users/me/password/request-code` | авторизованный |
+| POST | `/api/users/me/password` | авторизованный (нужен код из письма) |
+| POST | `/api/auth/password-reset/request`, `/confirm` | все |
 | GET/POST | `/api/projects` | авторизованный (создатель → CAPTAIN) |
 | GET | `/api/projects/{id}` | участник проекта (+ `my_role`) |
 | POST | `/api/projects/{id}/members` | CAPTAIN |

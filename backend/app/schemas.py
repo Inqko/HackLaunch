@@ -22,7 +22,7 @@ class ORMModel(BaseModel):
 class RegisterIn(BaseModel):
     email: EmailStr
     name: str = Field(min_length=1)
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=1, max_length=128)
     gitlab_username: str | None = None
 
 
@@ -43,9 +43,29 @@ class UserUpdate(BaseModel):
     gitlab_username: str | None = None
 
 
+class PasswordChangeRequestIn(BaseModel):
+    current_password: str
+
+
 class PasswordChangeIn(BaseModel):
     current_password: str
-    new_password: str = Field(min_length=6)
+    new_password: str = Field(min_length=1, max_length=128)
+    code: str = Field(min_length=6, max_length=6)
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmIn(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6)
+    new_password: str = Field(min_length=1, max_length=128)
+
+
+class PasswordCodeOut(BaseModel):
+    message: str
+    debug_code: str | None = None
 
 
 class TokenOut(BaseModel):
