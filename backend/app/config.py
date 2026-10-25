@@ -17,6 +17,13 @@ class Settings(BaseSettings):
     gitlab_namespace_id: int | None = None
     use_mock_gitlab: bool = True
 
+    # auto: DeepSeek, если задан ключ, иначе Gemini, иначе фоллбэк без ИИ
+    ai_provider: str = "auto"
+
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-chat"
+
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
 

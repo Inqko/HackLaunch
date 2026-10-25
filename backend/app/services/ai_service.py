@@ -1,13 +1,15 @@
 """ИИ-координатор (Участник 2): генерация черновиков задач и AI Pulse.
 
-Если GEMINI_API_KEY не задан или запрос упал — используется детерминированный
-фоллбэк, чтобы демо работало без сети.
+Провайдер — DeepSeek или Gemini (AI_PROVIDER в .env). Если ключа нет или запрос
+упал — используется детерминированный фоллбэк, чтобы демо работало без сети.
 """
 
+import json
 import logging
 from collections import Counter
 
-from pydantic import BaseModel
+import httpx
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,21 +50,76 @@ class AIHealth(BaseModel):
     status: HealthStatus
 
 
+def _active_provider() -> str | None:
+    provider = settings.ai_provider.lower()
+    if provider == "auto":
+        if settings.deepseek_api_key:
+            return "deepseek"
+        return "gemini" if settings.gemini_api_key else None
+    keys = {"deepseek": settings.deepseek_api_key, "gemini": settings.gemini_api_key}
+    return provider if keys.get(provider) else None
+
+
+async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
+    # DeepSeek поддерживает только JSON mode без строгой схемы:
+    # передаем JSON Schema в промпте и валидируем ответ Pydantic, при ошибке — одна повторная попытка
+    messages = [
+        {
+            "role": "system",
+            "content": "Отвечай только валидным JSON строго по этой JSON Schema, без пояснений:\n"
+            + json.dumps(schema.model_json_schema(), ensure_ascii=False),
+        },
+        {"role": "user", "content": prompt},
+    ]
+    async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=120) as client:
+        for attempt in range(2):
+            resp = await client.post(
+                "/chat/completions",
+                headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+                json={
+                    "model": settings.deepseek_model,
+                    "messages": messages,
+                    "response_format": {"type": "json_object"},
+                    "temperature": 0.3,
+                    "max_tokens": 4000,
+                },
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"] or ""
+            try:
+                return schema.model_validate_json(content)
+            except ValidationError as e:
+                if attempt:
+                    raise
+                messages += [
+                    {"role": "assistant", "content": content},
+                    {"role": "user", "content": f"JSON не прошел валидацию: {e}. Исправь и верни JSON целиком."},
+                ]
+    raise RuntimeError("unreachable")
+
+
 async def _ask_gemini(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
-    if not settings.gemini_api_key:
+    from google import genai
+
+    client = genai.Client(api_key=settings.gemini_api_key)
+    resp = await client.aio.models.generate_content(
+        model=settings.gemini_model,
+        contents=prompt,
+        config={"response_mime_type": "application/json", "response_schema": schema},
+    )
+    return resp.parsed
+
+
+async def _ask_llm(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
+    provider = _active_provider()
+    if provider is None:
         return None
     try:
-        from google import genai
-
-        client = genai.Client(api_key=settings.gemini_api_key)
-        resp = await client.aio.models.generate_content(
-            model=settings.gemini_model,
-            contents=prompt,
-            config={"response_mime_type": "application/json", "response_schema": schema},
-        )
-        return resp.parsed
+        if provider == "deepseek":
+            return await _ask_deepseek(prompt, schema)
+        return await _ask_gemini(prompt, schema)
     except Exception:
-        logger.exception("Gemini request failed, using fallback")
+        logger.exception("%s request failed, using fallback", provider)
         return None
 
 
@@ -103,12 +160,15 @@ FALLBACK_TEMPLATES[Specialization.FULLSTACK] = [
 FALLBACK_TEMPLATES[Specialization.OTHER] = FALLBACK_TEMPLATES[Specialization.PM]
 
 
-def _fallback_plan(members: list[ProjectMember], extra: str | None) -> list[AITask]:
-    tasks = [
+def _fallback_tasks_for(m: ProjectMember) -> list[AITask]:
+    return [
         AITask(title=t, description=d, assignee_id=m.user_id, priority=p, estimated_hours=h)
-        for m in members
         for t, d, p, h in FALLBACK_TEMPLATES[m.specialization]
     ]
+
+
+def _fallback_plan(members: list[ProjectMember], extra: str | None) -> list[AITask]:
+    tasks = [t for m in members for t in _fallback_tasks_for(m)]
     if extra and members:
         devs = [m for m in members if m.specialization in (Specialization.BACKEND, Specialization.FULLSTACK)]
         owner = (devs or members)[0]
@@ -122,35 +182,57 @@ def _fallback_plan(members: list[ProjectMember], extra: str | None) -> list[AITa
     return tasks
 
 
-def _plan_prompt(project: Project, members: list[ProjectMember], extra: str | None) -> str:
+def _plan_prompt(
+    project: Project, members: list[ProjectMember], existing: list[Task], extra: str | None
+) -> str:
     team = "\n".join(
         f"- assignee_id={m.user_id}, имя: {m.user.name}, специализация: {m.specialization.value}"
         for m in members
     )
-    return f"""Ты — ИИ-координатор команды на хакатоне. Декомпозируй проект на конкретные задачи
-и распредели их между участниками строго по специализациям. Нагрузка должна быть сбалансирована,
-3-5 задач на человека, оценки в часах реалистичны для хакатона (0.5-4 ч).
+    existing_lines = "\n".join(f"- [{t.status.value}] {t.title}" for t in existing) or "нет"
+    return f"""Ты — ИИ-координатор команды на хакатоне. Декомпозируй проект на конкретные,
+проверяемые задачи и распредели их между участниками строго по специализациям.
+
+Правила:
+- Каждый участник из списка команды получает 3-5 задач, никого не пропускай.
+- Суммарные часы у участников должны отличаться не больше чем на 30%.
+- Оценки реалистичны для хакатона: 0.5-4 часа на задачу.
+- Не дублируй уже существующие задачи (список ниже), дополняй их.
+- PM / OTHER получают задачи по скоупу, демо, питчу и координации; DESIGN — по UI и презентации.
+- Название — короткое действие («Сделать…», «Настроить…»), описание — 1-2 предложения с критерием готовности.
+- assignee_id — только из списка команды.
 
 Проект: {project.name}
 Описание: {project.description}
-{f"Дополнительный контекст от капитана: {extra}" if extra else ""}
+{f"Дополнительный контекст от капитана (обязательно учти): {extra}" if extra else ""}
 
-Команда (используй только эти assignee_id):
+Команда:
 {team}
 
-Пиши названия и описания задач на русском."""
+Уже существующие задачи:
+{existing_lines}
+
+Пиши названия и описания задач на русском. Верни JSON."""
 
 
 async def generate_task_drafts(
     db: AsyncSession, project: Project, additional_context: str | None = None
 ) -> list[Task]:
     members = [m for m in project.members if m.role != ProjectRole.VIEWER]
-    plan = await _ask_gemini(_plan_prompt(project, members, additional_context), AIPlan)
+    existing = list(await db.scalars(select(Task).where(Task.project_id == project.id)))
+    plan = await _ask_llm(_plan_prompt(project, members, existing, additional_context), AIPlan)
 
     valid_ids = {m.user_id for m in members}
     ai_tasks = [t for t in plan.tasks if t.assignee_id in valid_ids] if plan else []
     if not ai_tasks:
         ai_tasks = _fallback_plan(members, additional_context)
+    else:
+        # ИИ иногда «забывает» участника — добираем ему задачи из шаблонов
+        covered = {t.assignee_id for t in ai_tasks}
+        for m in members:
+            if m.user_id not in covered:
+                logger.warning("LLM skipped member %s, adding fallback tasks", m.user_id)
+                ai_tasks += _fallback_tasks_for(m)
 
     tasks = [
         Task(
@@ -242,9 +324,9 @@ async def refresh_project_health(db: AsyncSession, project: Project) -> Project:
 Эвристические риски: {risks}
 
 Дай короткое резюме (2-4 предложения на русском: что готово, кто перегружен, что блокирует релиз),
-список конкретных рисков и общий статус."""
+список конкретных рисков и общий статус. Верни JSON."""
 
-    health = await _ask_gemini(prompt, AIHealth)
+    health = await _ask_llm(prompt, AIHealth)
     if health:
         project.ai_health_summary = health.summary
         project.ai_risks = health.risks
