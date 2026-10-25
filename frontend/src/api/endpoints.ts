@@ -9,6 +9,7 @@ import type {
   Material,
   MaterialType,
   Member,
+  PasswordCodeSent,
   ProjectDetail,
   ProjectRole,
   ProjectSummary,
@@ -26,8 +27,14 @@ export const authApi = {
   login: (data: { email: string; password: string }) => http.post<TokenResponse>("/api/auth/login", data),
   me: () => http.get<User>("/api/users/me"),
   updateMe: (data: { name?: string; gitlab_username?: string }) => http.patch<User>("/api/users/me", data),
-  changePassword: (data: { current_password: string; new_password: string }) =>
+  requestPasswordChangeCode: (data: { current_password: string }) =>
+    http.post<PasswordCodeSent>("/api/users/me/password/request-code", data),
+  changePassword: (data: { current_password: string; new_password: string; code: string }) =>
     http.post<void>("/api/users/me/password", data),
+  requestPasswordReset: (data: { email: string }) =>
+    http.post<PasswordCodeSent>("/api/auth/password-reset/request", data),
+  confirmPasswordReset: (data: { email: string; code: string; new_password: string }) =>
+    http.post<void>("/api/auth/password-reset/confirm", data),
 };
 
 export const projectsApi = {

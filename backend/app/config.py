@@ -37,5 +37,17 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
 
+    password_code_ttl_minutes: int = 10
+
+    # SMTP для писем с кодом подтверждения. Без SMTP_HOST код пишется в лог,
+    # а при EMAIL_DEBUG=true дополнительно возвращается в ответе API (только для разработки).
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "noreply@hacklaunch.local"
+    smtp_use_tls: bool = True
+    email_debug: bool = True
+
 
 settings = Settings()

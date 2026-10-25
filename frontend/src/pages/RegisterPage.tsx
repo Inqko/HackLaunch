@@ -1,8 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import { AuthShell } from "@/components/AuthShell";
-import { Button, ErrorText, Input, Label } from "@/components/ui";
+import { PasswordStrength } from "@/components/PasswordStrength";
+import { Button, ErrorText, Input, Label, PasswordInput } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
+import { passwordPolicyError } from "@/lib/password";
 import { errorMessage } from "@/lib/utils";
 
 export default function RegisterPage() {
@@ -19,8 +21,13 @@ export default function RegisterPage() {
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    setBusy(true);
     setError("");
+    const policyError = passwordPolicyError(form.password);
+    if (policyError) {
+      setError(policyError);
+      return;
+    }
+    setBusy(true);
     try {
       await register({ ...form, gitlab_username: form.gitlab_username || undefined });
       navigate("/projects", { replace: true });
@@ -43,8 +50,16 @@ export default function RegisterPage() {
           <Input type="email" required value={form.email} onChange={set("email")} />
         </div>
         <div>
-          <Label>Пароль (от 6 символов)</Label>
-          <Input type="password" required minLength={6} value={form.password} onChange={set("password")} />
+          <Label>Пароль</Label>
+          <PasswordInput
+            autoComplete="new-password"
+            required
+            value={form.password}
+            onChange={set("password")}
+          />
+          <div className="mt-2">
+            <PasswordStrength password={form.password} />
+          </div>
         </div>
         <div>
           <Label>GitLab username (необязательно)</Label>
