@@ -36,6 +36,18 @@ logger = logging.getLogger(__name__)
 DEVELOPER_ACCESS_LEVEL = 30
 
 
+def normalize_gitlab_username(value: str | None) -> str | None:
+    """GitLab username без @ и пробелов; пустое значение -> None.
+
+    Пользователи часто вводят @username, как в Telegram, но GitLab API
+    ожидает чистый логин.
+    """
+    if not value:
+        return None
+    username = value.strip().lstrip("@").strip()
+    return username or None
+
+
 @dataclass
 class RepoInfo:
     id: int
@@ -131,7 +143,7 @@ class RealGitLabClient:
         body = {
             "name": name,
             "path": path,
-            "description": description[:2000],
+            "description": (description or "")[:2000],
             "initialize_with_readme": True,
             "visibility": "private",
         }
@@ -144,6 +156,9 @@ class RealGitLabClient:
         return RepoInfo(id=data["id"], web_url=data["web_url"])
 
     async def add_member(self, gitlab_project_id: int, username: str) -> None:
+        username = normalize_gitlab_username(username)
+        if not username:
+            return
         async with self._client() as client:
             resp = await client.get("/users", params={"username": username})
             resp.raise_for_status()
@@ -151,12 +166,34 @@ class RealGitLabClient:
             if not found:
                 logger.warning("GitLab user %s not found", username)
                 return
+
+            user_id = found[0]["id"]
+            # /members/all учитывает и прямых, и наследуемых участников (например,
+            # Owner группы). Повторно приглашать их нельзя: GitLab отвечает 400
+            # на попытку понизить унаследованную роль до Developer.
+            resp = await client.get(
+                f"/projects/{gitlab_project_id}/members/all/{user_id}"
+            )
+            if resp.status_code == 200:
+                logger.info(
+                    "GitLab user %s already has access to project %s",
+                    username,
+                    gitlab_project_id,
+                )
+                return
+            if resp.status_code != 404:
+                resp.raise_for_status()
+
             resp = await client.post(
                 f"/projects/{gitlab_project_id}/members",
-                json={"user_id": found[0]["id"], "access_level": DEVELOPER_ACCESS_LEVEL},
+                json={"user_id": user_id, "access_level": DEVELOPER_ACCESS_LEVEL},
             )
-            if resp.status_code != 409:  # 409 — уже участник
-                resp.raise_for_status()
+            if resp.status_code == 409:  # 409 — уже участник
+                return
+            if resp.status_code == 400 and "inherited membership" in resp.text.lower():
+                # Гонка: доступ появился между проверкой и приглашением
+                return
+            resp.raise_for_status()
 
     async def _resolve_user_id(
         self, client: httpx.AsyncClient, username: str
@@ -487,7 +524,7 @@ async def _gitlab_username(db: AsyncSession, user_id: int | None) -> str | None:
     if user_id is None:
         return None
     user = await db.get(User, user_id)
-    return user.gitlab_username if user and user.gitlab_username else None
+    return normalize_gitlab_username(user.gitlab_username) if user else None
 
 
 async def trigger_gitlab_repo_creation(db: AsyncSession, project: Project, users: list[User]) -> None:
@@ -548,7 +585,7 @@ async def sync_members_to_gitlab(db: AsyncSession, project: Project) -> tuple[in
     invited = 0
     skipped = 0
     for member in members:
-        username = member.user.gitlab_username
+        username = normalize_gitlab_username(member.user.gitlab_username)
         if not username:
             skipped += 1
             continue
@@ -652,11 +689,13 @@ async def sync_issues_from_gitlab(db: AsyncSession, project: Project) -> tuple[i
         return (0, 0)
 
     members = await _project_members(db, project.id)
-    usernames = {
-        member.user.gitlab_username.lower(): member.user_id
-        for member in members
-        if member.user.gitlab_username and member.role != ProjectRole.VIEWER
-    }
+    usernames: dict[str, int] = {}
+    for member in members:
+        if member.role == ProjectRole.VIEWER:
+            continue
+        username = normalize_gitlab_username(member.user.gitlab_username)
+        if username:
+            usernames[username.lower()] = member.user_id
 
     async with _project_lock(project.id):
         issues = await get_gitlab_client().list_issues(
