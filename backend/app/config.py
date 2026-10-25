@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
+    # Запасные модели того же провайдера: если основная перегружена (429) или ответила мусором
+    deepseek_fallback_models: list[str] = []
     # Для self-hosted/vLLM провайдеров: отключает «размышления» reasoning-модели, ответ в разы быстрее
     deepseek_disable_thinking: bool = False
 

@@ -10,6 +10,7 @@ export function AIPulseWidget({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const { project, reload, isCaptain, canEdit } = useProject();
   const [busy, setBusy] = useState<"refresh" | "generate" | null>(null);
   const [error, setError] = useState("");
+  const [genNotice, setGenNotice] = useState<{ text: string; warn: boolean } | null>(null);
   const [generateOpen, setGenerateOpen] = useState(false);
   const [context, setContext] = useState("");
   const health = HEALTH_LABELS[project.ai_health_status];
@@ -30,8 +31,14 @@ export function AIPulseWidget({ onOpenDrafts }: { onOpenDrafts: () => void }) {
   const generate = async () => {
     setBusy("generate");
     setError("");
+    setGenNotice(null);
     try {
-      await aiApi.generateTasks(project.id, context || undefined);
+      const res = await aiApi.generateTasks(project.id, context || undefined);
+      setGenNotice(
+        res.warning
+          ? { text: res.warning, warn: true }
+          : { text: `Сгенерировано ${res.tasks.length} задач (${res.model ?? "ИИ"}).`, warn: false },
+      );
       setGenerateOpen(false);
       setContext("");
       onOpenDrafts();
@@ -71,6 +78,11 @@ export function AIPulseWidget({ onOpenDrafts }: { onOpenDrafts: () => void }) {
             </ul>
           )}
           <ErrorText>{error}</ErrorText>
+          {genNotice && (
+            <p className={genNotice.warn ? "rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-800" : "text-xs text-slate-500"}>
+              {genNotice.text}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-2">
           {isCaptain && (
@@ -102,7 +114,7 @@ export function AIPulseWidget({ onOpenDrafts }: { onOpenDrafts: () => void }) {
           placeholder="Дополнительный контекст (необязательно)"
         />
         <Button variant="ai" className="mt-4 w-full" onClick={generate} disabled={busy !== null}>
-          {busy === "generate" ? "ИИ думает..." : "Сгенерировать"}
+          {busy === "generate" ? "ИИ продумывает проект и пишет задачи (до 2 минут)..." : "Сгенерировать"}
         </Button>
       </Modal>
     </Card>

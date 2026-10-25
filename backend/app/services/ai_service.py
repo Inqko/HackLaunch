@@ -8,6 +8,7 @@ import asyncio
 import json
 import logging
 from collections import Counter
+from dataclasses import dataclass, field
 
 import httpx
 from pydantic import BaseModel, Field, ValidationError
@@ -34,15 +35,28 @@ OVERLOAD_OPEN_HOURS = 8.0
 # --- Схемы Structured Outputs ---
 
 class AITask(BaseModel):
-    title: str = Field(description="Короткое действие: «Сделать…», «Настроить…»")
-    description: str = Field(description="2-3 предложения: что делаем, зачем и как это связано с проектом")
-    steps: list[str] = Field(
+    title: str = Field(
+        min_length=5,
+        description="Конкретное действие с предметом проекта: «Сделать эндпоинт POST /recipes/scan "
+        "для распознавания фото рецепта», а не «Настроить API»",
+    )
+    description: str = Field(
+        min_length=60,
+        description="3-5 предложений: что именно делаем, зачем это проекту и пользователю, "
+        "как связано с другими частями системы",
+    )
+    technical_details: list[str] = Field(
         default=[],
-        description="3-6 конкретных шагов: какие технологии, эндпоинты, экраны, файлы, данные",
+        description="Конкретика реализации: эндпоинты с методами, таблицы и поля, экраны и компоненты, "
+        "библиотеки и модели, форматы данных. Для PM/дизайна — артефакты и инструменты",
+    )
+    steps: list[str] = Field(
+        min_length=2, description="4-8 шагов в порядке выполнения, каждый — конкретное действие"
     )
     acceptance_criteria: list[str] = Field(
-        default=[], description="2-4 проверяемых критерия готовности"
+        min_length=1, description="3-6 проверяемых критериев: что можно открыть, вызвать или показать"
     )
+    deliverable: str = Field(default="", description="Что конкретно покажем на демо после выполнения задачи")
     depends_on: str | None = Field(
         default=None, description="От какой задачи или участника зависит, если зависит"
     )
@@ -52,16 +66,34 @@ class AITask(BaseModel):
 
     def full_description(self) -> str:
         parts = [self.description.strip()]
+        if self.technical_details:
+            parts.append("Технические детали:\n" + "\n".join(f"- {d}" for d in self.technical_details))
         if self.steps:
             parts.append("Шаги:\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(self.steps, 1)))
         if self.acceptance_criteria:
             parts.append("Критерии готовности:\n" + "\n".join(f"- {c}" for c in self.acceptance_criteria))
+        if self.deliverable:
+            parts.append(f"Результат для демо: {self.deliverable}")
         if self.depends_on:
             parts.append(f"Зависит от: {self.depends_on}")
         return "\n\n".join(parts)
 
 
-class AIPlan(BaseModel):
+class ProjectAnalysis(BaseModel):
+    core_features: list[str] = Field(
+        default=[], description="3-6 ключевых фич MVP, которые обязательно покажем на защите"
+    )
+    architecture: str = Field(
+        default="", description="Как устроено решение: фронтенд, бэкенд, ИИ/ML, данные, внешние API — 3-5 предложений"
+    )
+    shared_contracts: list[str] = Field(
+        default=[], description="Общие контракты между участниками: эндпоинты с методами и полями, "
+        "форматы данных — чтобы задачи бэкенда, фронтенда и ML стыковались",
+    )
+    demo_scenario: str = Field(default="", description="Сценарий демо на защите в 3-5 шагах")
+
+
+class MemberPlan(BaseModel):
     tasks: list[AITask]
 
 
@@ -98,29 +130,51 @@ MAX_RETRIES = 3
 MAX_RETRY_DELAY = 20.0
 
 
-async def _post_with_retry(client: httpx.AsyncClient, body: dict) -> httpx.Response:
+async def _post_with_retry(client: httpx.AsyncClient, body: dict, retries: int = MAX_RETRIES) -> httpx.Response:
     # Бесплатные аккаунты у провайдеров часто получают 429 при пиковой нагрузке — ждем Retry-After
-    for attempt in range(MAX_RETRIES + 1):
+    for attempt in range(retries + 1):
         resp = await client.post(
             "/chat/completions",
             headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
             json=body,
         )
-        if resp.status_code not in RETRY_STATUSES or attempt == MAX_RETRIES:
+        if resp.status_code not in RETRY_STATUSES or attempt == retries:
             resp.raise_for_status()
             return resp
         try:
             delay = min(float(resp.headers.get("retry-after", 5)), MAX_RETRY_DELAY)
         except ValueError:
             delay = 5.0
-        logger.warning("LLM %s, retry %d/%d in %.0fs", resp.status_code, attempt + 1, MAX_RETRIES, delay)
+        logger.warning("LLM %s, retry %d/%d in %.0fs", resp.status_code, attempt + 1, retries, delay)
         await asyncio.sleep(delay)
     raise RuntimeError("unreachable")
 
 
-async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
-    # DeepSeek поддерживает только JSON mode без строгой схемы:
-    # передаем JSON Schema в промпте и валидируем ответ Pydantic, при ошибке — одна повторная попытка
+async def _ask_deepseek(
+    prompt: str, schema: type[BaseModel], temperature: float = 0.3
+) -> tuple[BaseModel, str]:
+    """OpenAI-совместимый провайдер. При перегрузке/ошибке пробует запасные модели.
+
+    JSON mode без строгой схемы: схема — в системном промпте, ответ валидируем Pydantic,
+    при ошибке валидации модель один раз исправляет ответ. Возвращает (ответ, модель).
+    """
+    models = [settings.deepseek_model, *settings.deepseek_fallback_models]
+    # С запасными моделями долго не ждем одну перегруженную — быстрее переключиться
+    retries = 1 if len(models) > 1 else MAX_RETRIES
+    last_error: Exception | None = None
+    async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=110) as client:
+        for model in models:
+            try:
+                return await _ask_model(client, model, prompt, schema, temperature, retries), model
+            except (httpx.HTTPError, ValidationError, KeyError, ValueError) as e:
+                logger.warning("LLM model %s failed (%s), trying next", model, type(e).__name__)
+                last_error = e
+    raise last_error or RuntimeError("no models configured")
+
+
+async def _ask_model(
+    client: httpx.AsyncClient, model: str, prompt: str, schema: type[BaseModel], temperature: float, retries: int
+) -> BaseModel:
     messages = [
         {
             "role": "system",
@@ -130,28 +184,28 @@ async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
         {"role": "user", "content": prompt},
     ]
     body = {
-        "model": settings.deepseek_model,
+        "model": model,
         "response_format": {"type": "json_object"},
-        "temperature": 0.3,
+        "temperature": temperature,
         # С запасом: у reasoning-моделей рассуждения тоже расходуют лимит
-        "max_tokens": 16000,
+        "max_tokens": 8000,
     }
     if settings.deepseek_disable_thinking:
         # Разные chat-шаблоны читают разные ключи, лишние игнорируются
         body["chat_template_kwargs"] = {"thinking": False, "enable_thinking": False}
-    async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=180) as client:
-        for attempt in range(2):
-            resp = await _post_with_retry(client, {**body, "messages": messages})
-            content = resp.json()["choices"][0]["message"]["content"] or ""
-            try:
-                return schema.model_validate_json(_extract_json(content))
-            except ValidationError as e:
-                if attempt:
-                    raise
-                messages += [
-                    {"role": "assistant", "content": content},
-                    {"role": "user", "content": f"JSON не прошел валидацию: {e}. Исправь и верни JSON целиком."},
-                ]
+    for attempt in range(2):
+        resp = await _post_with_retry(client, {**body, "messages": messages}, retries)
+        content = resp.json()["choices"][0]["message"]["content"] or ""
+        try:
+            return schema.model_validate_json(_extract_json(content))
+        except ValidationError as e:
+            if attempt:
+                raise
+            messages += [
+                {"role": "assistant", "content": content},
+                {"role": "user", "content": f"JSON не прошел валидацию: {e}. Исправь (если поля "
+                 "слишком короткие — распиши подробнее) и верни JSON целиком."},
+            ]
     raise RuntimeError("unreachable")
 
 
@@ -167,17 +221,24 @@ async def _ask_gemini(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
     return resp.parsed
 
 
-async def _ask_llm(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
+async def _ask_llm_meta(
+    prompt: str, schema: type[BaseModel], temperature: float = 0.3
+) -> tuple[BaseModel | None, str | None]:
+    """(ответ, модель) или (None, None), если ИИ недоступен — тогда вызывающий берет фоллбэк."""
     provider = _active_provider()
     if provider is None:
-        return None
+        return None, None
     try:
         if provider == "deepseek":
-            return await _ask_deepseek(prompt, schema)
-        return await _ask_gemini(prompt, schema)
+            return await _ask_deepseek(prompt, schema, temperature)
+        return await _ask_gemini(prompt, schema), settings.gemini_model
     except Exception:
         logger.exception("%s request failed, using fallback", provider)
-        return None
+        return None, None
+
+
+async def _ask_llm(prompt: str, schema: type[BaseModel]) -> BaseModel | None:
+    return (await _ask_llm_meta(prompt, schema))[0]
 
 
 # --- Генерация задач ---
@@ -219,7 +280,10 @@ FALLBACK_TEMPLATES[Specialization.OTHER] = FALLBACK_TEMPLATES[Specialization.PM]
 
 def _fallback_tasks_for(m: ProjectMember) -> list[AITask]:
     return [
-        AITask(title=t, description=d, assignee_id=m.user_id, priority=p, estimated_hours=h)
+        AITask.model_construct(
+            title=t, description=d, technical_details=[], steps=[], acceptance_criteria=[], deliverable="",
+            depends_on=None, assignee_id=m.user_id, priority=p, estimated_hours=h,
+        )
         for t, d, p, h in FALLBACK_TEMPLATES[m.specialization]
     ]
 
@@ -229,74 +293,158 @@ def _fallback_plan(members: list[ProjectMember], extra: str | None) -> list[AITa
     if extra and members:
         devs = [m for m in members if m.specialization in (Specialization.BACKEND, Specialization.FULLSTACK)]
         owner = (devs or members)[0]
-        tasks.insert(0, AITask(
-            title=f"Реализовать: {extra[:80]}",
-            description=extra,
-            assignee_id=owner.user_id,
-            priority=TaskPriority.HIGH,
-            estimated_hours=3.0,
+        tasks.insert(0, AITask.model_construct(
+            title=f"Реализовать: {extra[:80]}", description=extra, technical_details=[], steps=[],
+            acceptance_criteria=[], deliverable="", depends_on=None,
+            assignee_id=owner.user_id, priority=TaskPriority.HIGH, estimated_hours=3.0,
         ))
     return tasks
 
 
-def _plan_prompt(
-    project: Project, members: list[ProjectMember], existing: list[Task], extra: str | None
+SPEC_FOCUS = {
+    Specialization.BACKEND: "API, модели данных, бизнес-логика, интеграции, авторизация",
+    Specialization.FRONTEND: "экраны, компоненты, состояния, работа с API, UX ключевого сценария",
+    Specialization.ML: "модели и промпты, подготовка данных, качество ответов, ИИ-сервис с фоллбэком",
+    Specialization.DESIGN: "пользовательский сценарий, макеты ключевых экранов, UI-кит, визуал презентации",
+    Specialization.PM: "скоуп MVP, сценарий демо, питч, тексты, проверка готовности к защите",
+    Specialization.FULLSTACK: "сквозные фичи от API до экрана, запуск и деплой",
+    Specialization.OTHER: "то, что усиливает защиту: исследование, контент, демо-данные",
+}
+
+EXAMPLE = """Плохо (шаблонно): «Настроить API» — «Сделать REST API для проекта».
+Хорошо: «Сделать эндпоинт POST /api/prescriptions/scan для распознавания фото рецепта» —
+description: «Врач загружает фото рецепта, сервис извлекает препараты и дозировки, чтобы дальше
+проверить их совместимость. Это первый шаг основного сценария демо; фронтенд и ML ждут этот контракт.»
+technical_details: [«POST /api/prescriptions/scan, multipart: file (jpg/png до 10 МБ)»,
+«ответ: {id, drugs: [{name, dose, frequency}], confidence}», «таблица prescriptions: id, user_id,
+image_path, raw_text, parsed_json, created_at», «OCR: вызов ML-сервиса /ocr, таймаут 15 с, фоллбэк — мок»]
+steps: 4-8 конкретных действий; acceptance_criteria: «фото из папки demo/ возвращает ≥2 препарата»,
+«не-изображение → 400 с понятной ошибкой», «эндпоинт виден в Swagger с примером ответа»;
+deliverable: «на демо загружаем фото и сразу видим распознанный список препаратов»."""
+
+
+def _team_lines(members: list[ProjectMember]) -> str:
+    return "\n".join(
+        f"- {m.user.name} — {m.specialization.value} (зона: {SPEC_FOCUS[m.specialization]})" for m in members
+    )
+
+
+def _project_block(project: Project, extra: str | None) -> str:
+    return (
+        f"Проект: {project.name}\nОписание идеи: {project.description}\n"
+        + (f"Дополнительный контекст от капитана (обязательно учти): {extra}\n" if extra else "")
+    )
+
+
+def _analysis_prompt(project: Project, members: list[ProjectMember], extra: str | None) -> str:
+    return f"""Ты — опытный техлид команды на хакатоне. Коротко продумай решение, прежде чем раздавать задачи.
+
+{_project_block(project, extra)}
+Команда:
+{_team_lines(members)}
+
+Заполни: core_features — 3-6 ключевых фич MVP для защиты; architecture — как устроено решение
+(3-5 предложений); shared_contracts — 3-8 общих контрактов между участниками (эндпоинты с методами
+и полями, форматы данных); demo_scenario — сценарий демо в 3-5 шагах. Пиши кратко, на русском. Верни JSON."""
+
+
+def _member_prompt(
+    project: Project, members: list[ProjectMember], member: ProjectMember,
+    analysis: ProjectAnalysis | None, existing: list[Task], extra: str | None,
 ) -> str:
-    team = "\n".join(
-        f"- assignee_id={m.user_id}, имя: {m.user.name}, специализация: {m.specialization.value}"
-        for m in members
+    plan = (
+        f"""План команды (общий для всех участников, опирайся на него):
+Ключевые фичи: {"; ".join(analysis.core_features)}
+Архитектура: {analysis.architecture}
+Общие контракты: {"; ".join(analysis.shared_contracts)}
+Сценарий демо: {analysis.demo_scenario}
+"""
+        if analysis else ""
     )
     existing_lines = "\n".join(f"- [{t.status.value}] {t.title}" for t in existing) or "нет"
-    return f"""Ты — ИИ-координатор команды на хакатоне. Декомпозируй проект на конкретные,
-проверяемые задачи и распредели их между участниками строго по специализациям.
+    return f"""Ты — опытный техлид команды на хакатоне. Напиши задачи для ОДНОГО участника так подробно,
+чтобы он сразу сел и начал делать, без уточнений.
 
-Правила:
-- Каждый участник из списка команды получает 3-5 задач, никого не пропускай.
-- Суммарные часы у участников должны отличаться не больше чем на 30%.
-- Оценки реалистичны для хакатона: 0.5-4 часа на задачу.
-- Не дублируй уже существующие задачи (список ниже), дополняй их.
-- PM / OTHER получают задачи по скоупу, демо, питчу и координации; DESIGN — по UI и презентации.
-- Команда уже работает в HackLaunch: доска задач, распределение, трекинг прогресса и GitLab-репозиторий
-  есть автоматически — не создавай задач на Trello/Notion/Jira, распределение задач или создание репозитория.
-- Название — короткое действие («Сделать…», «Настроить…»).
-- Расписывай задачу так, чтобы участник мог начать работу без уточнений:
-  description — что делаем и зачем (2-3 предложения, с привязкой к идее проекта);
-  steps — 3-6 конкретных шагов (технологии, эндпоинты, экраны, данные — по специализации);
-  acceptance_criteria — 2-4 проверяемых критерия, по которым капитан поймет, что задача готова;
-  depends_on — если задача ждет результата другой задачи или участника.
-- assignee_id — только из списка команды.
+{_project_block(project, extra)}
+{plan}
+Команда: 
+{_team_lines(members)}
 
-Проект: {project.name}
-Описание: {project.description}
-{f"Дополнительный контекст от капитана (обязательно учти): {extra}" if extra else ""}
+Участник: {member.user.name}, специализация {member.specialization.value}
+(зона: {SPEC_FOCUS[member.specialization]}). assignee_id = {member.user_id}.
 
-Команда:
-{team}
-
-Уже существующие задачи:
+Требования:
+- 3-4 задачи только для этого участника, суммарно 7-10 часов, 1-4 часа на задачу.
+- Каждая задача — про ЭТОТ проект: его сущности, экраны, данные. Запрещены общие формулировки,
+  которые подошли бы любому проекту («Настроить API», «Сверстать основные экраны», «Подготовить
+  презентацию»). Если название можно скопировать в другой проект — перепиши.
+- technical_details — конкретика: эндпоинты и методы, поля таблиц, экраны и компоненты, библиотеки,
+  форматы данных. Используй общие контракты из плана, чтобы задачи участников стыковались.
+- acceptance_criteria — проверяемые: что можно открыть, вызвать или показать.
+- Доска задач, трекинг и GitLab-репозиторий уже есть в HackLaunch — не ставь задач на Trello/Notion/Jira,
+  распределение задач или создание репозитория.
+- Не дублируй существующие задачи:
 {existing_lines}
 
-Пиши названия и описания задач на русском. Верни JSON."""
+Пример уровня детализации:
+{EXAMPLE}
+
+Пиши на русском. Верни JSON."""
+
+
+@dataclass
+class GenerationResult:
+    tasks: list[Task]
+    used_ai: bool
+    model: str | None
+    fallback_members: list[str] = field(default_factory=list)
+
+
+# Провайдер на бесплатном тарифе ограничивает параллельные запросы
+MEMBER_CONCURRENCY = 2
 
 
 async def generate_task_drafts(
     db: AsyncSession, project: Project, additional_context: str | None = None
-) -> list[Task]:
+) -> GenerationResult:
+    """Сначала короткий анализ проекта, затем задачи для каждого участника отдельным запросом.
+
+    Маленькие запросы укладываются в таймаут провайдера (~100 с) и не ломают всю генерацию:
+    если запрос для участника не удался, только ему достаются шаблонные задачи.
+    """
     members = [m for m in project.members if m.role != ProjectRole.VIEWER]
     existing = list(await db.scalars(select(Task).where(Task.project_id == project.id)))
-    plan = await _ask_llm(_plan_prompt(project, members, existing, additional_context), AIPlan)
+    analysis, model = await _ask_llm_meta(_analysis_prompt(project, members, additional_context), ProjectAnalysis)
 
-    valid_ids = {m.user_id for m in members}
-    ai_tasks = [t for t in plan.tasks if t.assignee_id in valid_ids] if plan else []
-    if not ai_tasks:
+    sem = asyncio.Semaphore(MEMBER_CONCURRENCY)
+
+    async def plan_for(m: ProjectMember) -> tuple[ProjectMember, list[AITask], str | None]:
+        async with sem:
+            plan, used = await _ask_llm_meta(
+                _member_prompt(project, members, m, analysis, existing, additional_context),
+                MemberPlan, temperature=0.5,
+            )
+        tasks = [t for t in plan.tasks if t.assignee_id == m.user_id] if plan else []
+        if plan and not tasks:  # модель перепутала assignee_id — задачи все равно этого участника
+            tasks = plan.tasks
+            for t in tasks:
+                t.assignee_id = m.user_id
+        return m, tasks, used
+
+    ai_tasks: list[AITask] = []
+    fallback_members: list[str] = []
+    models_used = {model} if model else set()
+    for m, tasks, used in await asyncio.gather(*(plan_for(m) for m in members)):
+        if tasks:
+            ai_tasks += tasks
+            models_used.add(used)
+        else:
+            logger.warning("LLM failed for member %s, using templates", m.user_id)
+            fallback_members.append(m.user.name)
+            ai_tasks += _fallback_tasks_for(m)
+    used_ai = len(fallback_members) < len(members)
+    if not used_ai and additional_context and members:
         ai_tasks = _fallback_plan(members, additional_context)
-    else:
-        # ИИ иногда «забывает» участника — добираем ему задачи из шаблонов
-        covered = {t.assignee_id for t in ai_tasks}
-        for m in members:
-            if m.user_id not in covered:
-                logger.warning("LLM skipped member %s, adding fallback tasks", m.user_id)
-                ai_tasks += _fallback_tasks_for(m)
 
     tasks = [
         Task(
@@ -315,7 +463,11 @@ async def generate_task_drafts(
     await db.commit()
     for t in tasks:
         await db.refresh(t)
-    return tasks
+    return GenerationResult(
+        tasks=tasks, used_ai=used_ai,
+        model=", ".join(sorted(m for m in models_used if m)) if used_ai else None,
+        fallback_members=fallback_members if used_ai else [],
+    )
 
 
 # --- AI Pulse ---

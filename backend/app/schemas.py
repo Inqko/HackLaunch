@@ -237,6 +237,13 @@ class GenerateTasksIn(BaseModel):
     additional_context: str | None = None
 
 
+class GenerateTasksOut(BaseModel):
+    tasks: list[TaskOut]
+    used_ai: bool  # False — ИИ недоступен, подставлены шаблонные задачи
+    model: str | None
+    warning: str | None = None
+
+
 class AIStatusOut(BaseModel):
     ai_health_summary: str | None
     ai_health_status: HealthStatus

@@ -28,7 +28,7 @@ async def generate_tasks_from_prompt(project_id: int, prompt: str) -> list[dict]
     await init_db()
     async with SessionLocal() as db:
         project = await fetch_project(db, project_id)
-        return [_task_dict(t) for t in await generate_task_drafts(db, project, prompt)]
+        return [_task_dict(t) for t in (await generate_task_drafts(db, project, prompt)).tasks]
 
 
 @mcp.tool()

@@ -4,13 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import CAN_EDIT, CAPTAIN_ONLY, fetch_project
 from app.models import ProjectMember
-from app.schemas import AIStatusOut, GenerateTasksIn, TaskOut
+from app.schemas import AIStatusOut, GenerateTasksIn, GenerateTasksOut, TaskOut
 from app.services.ai_service import generate_task_drafts, refresh_project_health
 
 router = APIRouter(prefix="/api/projects/{project_id}/ai", tags=["ai"])
 
 
-@router.post("/generate-tasks", response_model=list[TaskOut])
+@router.post("/generate-tasks", response_model=GenerateTasksOut)
 async def generate_tasks(
     project_id: int,
     data: GenerateTasksIn,
@@ -18,7 +18,19 @@ async def generate_tasks(
     db: AsyncSession = Depends(get_db),
 ):
     project = await fetch_project(db, project_id)
-    return await generate_task_drafts(db, project, data.additional_context)
+    result = await generate_task_drafts(db, project, data.additional_context)
+    return GenerateTasksOut(
+        tasks=[TaskOut.model_validate(t) for t in result.tasks],
+        used_ai=result.used_ai,
+        model=result.model,
+        warning=(
+            "ИИ сейчас недоступен (провайдер перегружен или нет сети) — подставлены шаблонные задачи. "
+            "Удалите их в окне утверждения и попробуйте сгенерировать еще раз через минуту."
+            if not result.used_ai else
+            f"Для {', '.join(result.fallback_members)} ИИ не ответил — им подставлены шаблонные задачи."
+            if result.fallback_members else None
+        ),
+    )
 
 
 @router.post("/refresh-status", response_model=AIStatusOut)

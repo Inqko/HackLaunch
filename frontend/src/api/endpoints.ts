@@ -74,7 +74,10 @@ export const tasksApi = {
 
 export const aiApi = {
   generateTasks: (projectId: number, additional_context?: string) =>
-    http.post<Task[]>(`/api/projects/${projectId}/ai/generate-tasks`, { additional_context }),
+    http.post<{ tasks: Task[]; used_ai: boolean; model: string | null; warning: string | null }>(
+      `/api/projects/${projectId}/ai/generate-tasks`,
+      { additional_context },
+    ),
   refreshStatus: (projectId: number) => http.post<AIStatus>(`/api/projects/${projectId}/ai/refresh-status`),
 };
 
