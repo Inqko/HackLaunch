@@ -74,4 +74,7 @@ export const analyticsApi = {
 
 export const gitlabApi = {
   sync: (projectId: number) => http.post<GitLabSync>(`/api/projects/${projectId}/gitlab/sync`),
+  /** Создать репозиторий для проекта без GitLab (только CAPTAIN) */
+  connect: (projectId: number) =>
+    http.post<{ gitlab_project_id: number; gitlab_repo_url: string }>(`/api/projects/${projectId}/gitlab/connect`),
 };

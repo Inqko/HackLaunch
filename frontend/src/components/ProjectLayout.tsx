@@ -1,12 +1,12 @@
 import { BarChart3, GitBranch, LayoutDashboard, ListTodo, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
-import { projectsApi } from "@/api/endpoints";
+import { gitlabApi, projectsApi } from "@/api/endpoints";
 import type { ProjectDetail } from "@/api/types";
 import { ProjectContext } from "@/context/ProjectContext";
 import { ROLE_LABELS } from "@/lib/labels";
 import { cn, errorMessage } from "@/lib/utils";
-import { Badge, ErrorText, Spinner } from "./ui";
+import { Badge, Button, ErrorText, Spinner } from "./ui";
 
 const TABS = [
   { to: "", label: "Доска", icon: LayoutDashboard, end: true },
@@ -19,6 +19,8 @@ export default function ProjectLayout() {
   const projectId = Number(useParams().id);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState("");
+  const [connecting, setConnecting] = useState(false);
+  const [gitlabError, setGitlabError] = useState("");
 
   const reload = useCallback(async () => {
     try {
@@ -32,6 +34,19 @@ export default function ProjectLayout() {
     setProject(null);
     reload();
   }, [reload]);
+
+  const connectGitlab = async () => {
+    setConnecting(true);
+    setGitlabError("");
+    try {
+      await gitlabApi.connect(projectId);
+      await reload();
+    } catch (e) {
+      setGitlabError(errorMessage(e));
+    } finally {
+      setConnecting(false);
+    }
+  };
 
   if (error) return <ErrorText>{error}</ErrorText>;
   if (!project) return <Spinner />;
@@ -52,11 +67,19 @@ export default function ProjectLayout() {
                 GitLab подключен
               </a>
             ) : (
-              <span className="inline-flex items-center gap-1">
-                <GitBranch className="h-4 w-4" /> GitLab не подключен
+              <span className="inline-flex items-center gap-2">
+                <span className="inline-flex items-center gap-1">
+                  <GitBranch className="h-4 w-4" /> GitLab не подключен
+                </span>
+                {isCaptain && (
+                  <Button size="sm" variant="outline" onClick={connectGitlab} disabled={connecting}>
+                    {connecting ? "Создаем..." : "Создать репозиторий"}
+                  </Button>
+                )}
               </span>
             )}
           </div>
+          {gitlabError && <p className="mt-1 text-xs text-red-600">{gitlabError}</p>}
         </div>
       </div>
 
