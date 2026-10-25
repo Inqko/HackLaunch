@@ -4,12 +4,13 @@
 упал — используется детерминированный фоллбэк, чтобы демо работало без сети.
 """
 
+import asyncio
 import json
 import logging
 from collections import Counter
 
 import httpx
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -33,11 +34,31 @@ OVERLOAD_OPEN_HOURS = 8.0
 # --- Схемы Structured Outputs ---
 
 class AITask(BaseModel):
-    title: str
-    description: str
+    title: str = Field(description="Короткое действие: «Сделать…», «Настроить…»")
+    description: str = Field(description="2-3 предложения: что делаем, зачем и как это связано с проектом")
+    steps: list[str] = Field(
+        default=[],
+        description="3-6 конкретных шагов: какие технологии, эндпоинты, экраны, файлы, данные",
+    )
+    acceptance_criteria: list[str] = Field(
+        default=[], description="2-4 проверяемых критерия готовности"
+    )
+    depends_on: str | None = Field(
+        default=None, description="От какой задачи или участника зависит, если зависит"
+    )
     assignee_id: int
     priority: TaskPriority
     estimated_hours: float
+
+    def full_description(self) -> str:
+        parts = [self.description.strip()]
+        if self.steps:
+            parts.append("Шаги:\n" + "\n".join(f"{i}. {s}" for i, s in enumerate(self.steps, 1)))
+        if self.acceptance_criteria:
+            parts.append("Критерии готовности:\n" + "\n".join(f"- {c}" for c in self.acceptance_criteria))
+        if self.depends_on:
+            parts.append(f"Зависит от: {self.depends_on}")
+        return "\n\n".join(parts)
 
 
 class AIPlan(BaseModel):
@@ -72,6 +93,31 @@ def _extract_json(content: str) -> str:
     return content[start:end]
 
 
+RETRY_STATUSES = {429, 500, 502, 503, 504}
+MAX_RETRIES = 3
+MAX_RETRY_DELAY = 20.0
+
+
+async def _post_with_retry(client: httpx.AsyncClient, body: dict) -> httpx.Response:
+    # Бесплатные аккаунты у провайдеров часто получают 429 при пиковой нагрузке — ждем Retry-After
+    for attempt in range(MAX_RETRIES + 1):
+        resp = await client.post(
+            "/chat/completions",
+            headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
+            json=body,
+        )
+        if resp.status_code not in RETRY_STATUSES or attempt == MAX_RETRIES:
+            resp.raise_for_status()
+            return resp
+        try:
+            delay = min(float(resp.headers.get("retry-after", 5)), MAX_RETRY_DELAY)
+        except ValueError:
+            delay = 5.0
+        logger.warning("LLM %s, retry %d/%d in %.0fs", resp.status_code, attempt + 1, MAX_RETRIES, delay)
+        await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
+
+
 async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
     # DeepSeek поддерживает только JSON mode без строгой схемы:
     # передаем JSON Schema в промпте и валидируем ответ Pydantic, при ошибке — одна повторная попытка
@@ -95,12 +141,7 @@ async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
         body["chat_template_kwargs"] = {"thinking": False, "enable_thinking": False}
     async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=180) as client:
         for attempt in range(2):
-            resp = await client.post(
-                "/chat/completions",
-                headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
-                json={**body, "messages": messages},
-            )
-            resp.raise_for_status()
+            resp = await _post_with_retry(client, {**body, "messages": messages})
             content = resp.json()["choices"][0]["message"]["content"] or ""
             try:
                 return schema.model_validate_json(_extract_json(content))
@@ -215,7 +256,14 @@ def _plan_prompt(
 - Оценки реалистичны для хакатона: 0.5-4 часа на задачу.
 - Не дублируй уже существующие задачи (список ниже), дополняй их.
 - PM / OTHER получают задачи по скоупу, демо, питчу и координации; DESIGN — по UI и презентации.
-- Название — короткое действие («Сделать…», «Настроить…»), описание — 1-2 предложения с критерием готовности.
+- Команда уже работает в HackLaunch: доска задач, распределение, трекинг прогресса и GitLab-репозиторий
+  есть автоматически — не создавай задач на Trello/Notion/Jira, распределение задач или создание репозитория.
+- Название — короткое действие («Сделать…», «Настроить…»).
+- Расписывай задачу так, чтобы участник мог начать работу без уточнений:
+  description — что делаем и зачем (2-3 предложения, с привязкой к идее проекта);
+  steps — 3-6 конкретных шагов (технологии, эндпоинты, экраны, данные — по специализации);
+  acceptance_criteria — 2-4 проверяемых критерия, по которым капитан поймет, что задача готова;
+  depends_on — если задача ждет результата другой задачи или участника.
 - assignee_id — только из списка команды.
 
 Проект: {project.name}
@@ -254,7 +302,7 @@ async def generate_task_drafts(
         Task(
             project_id=project.id,
             title=t.title,
-            description=t.description,
+            description=t.full_description(),
             assignee_id=t.assignee_id,
             priority=t.priority,
             estimated_hours=t.estimated_hours,

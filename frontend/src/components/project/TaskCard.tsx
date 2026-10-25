@@ -15,7 +15,8 @@ export function TaskCard({ task, assignee, draggable }: { task: Task; assignee?:
         <p className="text-sm font-medium">{task.title}</p>
         {task.created_by_ai && <Sparkles className="h-3.5 w-3.5 shrink-0 text-indigo-500" aria-label="Создано ИИ" />}
       </div>
-      {task.description && <p className="mb-2 line-clamp-2 text-xs text-slate-500">{task.description}</p>}
+      {/* На карточке — только первый абзац (цель), шаги и критерии видны в личном кабинете */}
+      {task.description && <p className="mb-2 line-clamp-2 text-xs text-slate-500">{task.description.split("\n\n")[0]}</p>}
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge className={PRIORITY_COLORS[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
         <span className="inline-flex items-center gap-0.5 text-xs text-slate-500">

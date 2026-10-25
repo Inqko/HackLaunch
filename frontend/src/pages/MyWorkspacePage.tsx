@@ -75,7 +75,7 @@ export default function MyWorkspacePage() {
           <Card key={t.id} className="flex flex-wrap items-center gap-4 p-4">
             <div className="min-w-0 flex-1">
               <p className="font-medium">{t.title}</p>
-              {t.description && <p className="text-sm text-slate-500">{t.description}</p>}
+              {t.description && <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{t.description}</p>}
               <div className="mt-2 flex items-center gap-2">
                 <Badge className={PRIORITY_COLORS[t.priority]}>{PRIORITY_LABELS[t.priority]}</Badge>
                 <Badge>{STATUS_LABELS[t.status]}</Badge>

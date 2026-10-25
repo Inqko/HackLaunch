@@ -117,8 +117,8 @@ export function CaptainApprovalModal({ open, onClose, onApproved }: { open: bool
                         </Button>
                       </div>
                       {!r.removed && (
-                        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_180px_140px_90px]">
-                          <Textarea className="min-h-[40px]" rows={1} value={r.description} placeholder="Описание" onChange={(e) => patch(r.key, { description: e.target.value })} />
+                        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_180px_140px_90px] sm:items-start">
+                          <Textarea className="min-h-[40px] text-xs" rows={6} value={r.description} placeholder="Описание, шаги, критерии готовности" onChange={(e) => patch(r.key, { description: e.target.value })} />
                           <Select value={r.assignee_id ?? ""} onChange={(e) => patch(r.key, { assignee_id: e.target.value ? Number(e.target.value) : null })}>
                             <option value="">Без исполнителя</option>
                             {assignable.map((m) => (
