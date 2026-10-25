@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import ai, analytics, auth, materials, projects, tasks
+from app.routers import ai, analytics, auth, materials, projects, tasks, users
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,7 +33,7 @@ app.add_middleware(
     expose_headers=["Content-Disposition"],
 )
 
-for module in (auth, projects, tasks, ai, materials, analytics):
+for module in (auth, projects, tasks, ai, materials, analytics, users):
     app.include_router(module.router)
 
 

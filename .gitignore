@@ -10,6 +10,9 @@ venv/
 .env
 .env.local
 
+# Uploads
+uploads/
+
 # Node
 node_modules/
 dist/

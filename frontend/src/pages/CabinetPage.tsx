@@ -3,22 +3,26 @@ import {
   Clock,
   FolderKanban,
   GitBranch,
+  ImagePlus,
   ListTodo,
   Mail,
   Pencil,
   Play,
   Square,
   Timer,
+  Trash2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { projectsApi, tasksApi } from "@/api/endpoints";
 import type { ProjectSummary, Task, TaskPriority, TaskStatus } from "@/api/types";
+import { Avatar } from "@/components/Avatar";
+import { AvatarCropModal } from "@/components/AvatarCropModal";
 import { Badge, Button, Card, ErrorText, Input, Label, Modal, Select, Spinner } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { formatClock, formatTracked, useWorkTimer } from "@/hooks/useWorkTimer";
 import { NEXT_STATUS, PRIORITY_COLORS, PRIORITY_LABELS, ROLE_LABELS, STATUS_LABELS } from "@/lib/labels";
-import { errorMessage } from "@/lib/utils";
+import { cn, errorMessage } from "@/lib/utils";
 
 interface TaskWithProject {
   task: Task;
@@ -36,15 +40,6 @@ function isToday(iso: string): boolean {
     date.getMonth() === now.getMonth() &&
     date.getDate() === now.getDate()
   );
-}
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
 }
 
 export default function CabinetPage() {
@@ -264,14 +259,89 @@ export default function CabinetPage() {
   );
 }
 
+const AVATAR_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+// Исходник только кадрируется в браузере, на сервер уходит квадрат 512×512
+const AVATAR_SOURCE_MAX_MB = 20;
+
 function ProfileCard({ onEdit }: { onEdit: () => void }) {
-  const { user } = useAuth();
+  const { user, uploadAvatar, removeAvatar } = useAuth();
+  const [busy, setBusy] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
+  const [cropFile, setCropFile] = useState<File | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
   if (!user) return null;
+
+  const run = async (action: () => Promise<unknown>) => {
+    setAvatarError("");
+    setBusy(true);
+    try {
+      await action();
+    } catch (err) {
+      setAvatarError(errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!AVATAR_TYPES.includes(file.type)) {
+      setAvatarError("Поддерживаются только JPEG, PNG, WebP и GIF");
+      return;
+    }
+    if (file.size > AVATAR_SOURCE_MAX_MB * 1024 * 1024) {
+      setAvatarError(`Файл больше ${AVATAR_SOURCE_MAX_MB} МБ`);
+      return;
+    }
+    setAvatarError("");
+    setCropFile(file);
+  };
+
+  const handleCropped = async (cropped: File) => {
+    // Ошибку загрузки показывает само окно кадрирования, поэтому здесь её не ловим
+    await uploadAvatar(cropped);
+    setCropFile(null);
+  };
+
+  const handleDelete = () => {
+    if (confirm("Удалить фотографию профиля?")) void run(removeAvatar);
+  };
 
   return (
     <Card className="flex flex-wrap items-center gap-5">
-      <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-xl font-bold text-white">
-        {initials(user.name) || "?"}
+      <div className="flex shrink-0 flex-col items-center gap-2">
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={busy}
+          className="group relative rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+          title="Загрузить фото"
+        >
+          <Avatar src={user.avatar_url} name={user.name} className="h-20 w-20 text-2xl" />
+          <span
+            className={cn(
+              "absolute inset-0 flex items-center justify-center rounded-full bg-black/40 transition-opacity",
+              busy ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+            )}
+          >
+            {busy ? <Spinner /> : <ImagePlus className="h-5 w-5 text-white" />}
+          </span>
+        </button>
+        <div className="flex gap-1">
+          <Button variant="ghost" size="sm" onClick={() => inputRef.current?.click()} disabled={busy} title="Загрузить фото">
+            <ImagePlus className="h-4 w-4" />
+          </Button>
+          {user.avatar_url && (
+            <Button variant="ghost" size="sm" onClick={handleDelete} disabled={busy} title="Удалить фото">
+              <Trash2 className="h-4 w-4 text-red-500" />
+            </Button>
+          )}
+        </div>
+        <input ref={inputRef} type="file" accept={AVATAR_TYPES.join(",")} className="hidden" onChange={handleFile} />
+        <AvatarCropModal file={cropFile} onClose={() => setCropFile(null)} onConfirm={handleCropped} />
       </div>
       <div className="min-w-0 flex-1">
         <p className="truncate text-xl font-semibold">{user.name}</p>
@@ -284,6 +354,7 @@ function ProfileCard({ onEdit }: { onEdit: () => void }) {
             {user.gitlab_username ? `@${user.gitlab_username}` : "GitLab не привязан"}
           </span>
         </div>
+        {avatarError && <div className="mt-2"><ErrorText>{avatarError}</ErrorText></div>}
       </div>
       <Button variant="outline" onClick={onEdit}>
         <Pencil className="h-4 w-4" /> Редактировать профиль

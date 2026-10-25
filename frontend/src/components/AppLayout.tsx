@@ -1,8 +1,9 @@
-import { LogOut, Rocket, UserRound } from "lucide-react";
+import { LogOut, Rocket } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { cn } from "@/lib/utils";
+import { Avatar } from "./Avatar";
 import { Button, Spinner } from "./ui";
 
 export function RequireAuth({ children }: { children: ReactNode }) {
@@ -40,7 +41,7 @@ export function AppLayout() {
               }
               title="Личный кабинет"
             >
-              <UserRound className="h-4 w-4" />
+              <Avatar src={user?.avatar_url} name={user?.name ?? "?"} className="h-7 w-7 text-xs" />
               <span className="hidden sm:inline">{user?.name}</span>
             </NavLink>
             <Button variant="ghost" size="sm" onClick={logout}>

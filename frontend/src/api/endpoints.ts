@@ -26,6 +26,15 @@ export const authApi = {
   updateMe: (data: { name?: string; gitlab_username?: string | null }) => http.patch<User>("/api/users/me", data),
 };
 
+export const avatarApi = {
+  upload: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return http.upload<User>("/api/users/me/avatar", form);
+  },
+  remove: () => http.del<User>("/api/users/me/avatar"),
+};
+
 export const projectsApi = {
   list: () => http.get<ProjectSummary[]>("/api/projects"),
   create: (data: { name: string; description: string; auto_create_gitlab: boolean; specialization: Specialization }) =>

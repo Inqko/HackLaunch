@@ -2,6 +2,7 @@ import { Trash2, UserPlus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { projectsApi } from "@/api/endpoints";
 import type { ProjectRole, Specialization } from "@/api/types";
+import { Avatar } from "@/components/Avatar";
 import { Badge, Button, Card, ErrorText, Input, Label, Select } from "@/components/ui";
 import { useAuth } from "@/context/AuthContext";
 import { useProject } from "@/context/ProjectContext";
@@ -56,8 +57,13 @@ export default function TeamPage() {
               return (
                 <tr key={m.user_id} className="border-b last:border-0">
                   <td className="px-4 py-3">
-                    <p className="font-medium">{m.name}</p>
-                    <p className="text-xs text-slate-500">{m.email}</p>
+                    <div className="flex items-center gap-3">
+                      <Avatar src={m.avatar_url} name={m.name} className="h-8 w-8 text-xs" />
+                      <div>
+                        <p className="font-medium">{m.name}</p>
+                        <p className="text-xs text-slate-500">{m.email}</p>
+                      </div>
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-slate-600">{m.gitlab_username ?? "—"}</td>
                   <td className="px-4 py-3">

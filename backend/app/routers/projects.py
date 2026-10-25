@@ -24,6 +24,7 @@ def member_out(m: ProjectMember) -> MemberOut:
         name=m.user.name,
         email=m.user.email,
         gitlab_username=m.user.gitlab_username,
+        avatar_url=m.user.avatar_url,
         role=m.role,
         specialization=m.specialization,
         joined_at=m.joined_at,

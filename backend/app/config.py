@@ -20,5 +20,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
 
+    # Загрузка файлов (аватары)
+    upload_dir: str = "uploads"
+    avatar_max_mb: int = 5
+
 
 settings = Settings()
