@@ -8,6 +8,7 @@ from sqlalchemy import (
     Enum,
     Float,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -117,6 +118,10 @@ class ProjectMember(Base):
 
 class Task(Base):
     __tablename__ = "tasks"
+    # iid issue в GitLab; nullable, чтобы старые задачи и черновики жили без GitLab
+    __table_args__ = (
+        Index("ix_tasks_project_gitlab_iid", "project_id", "gitlab_issue_iid", unique=True),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"), index=True)
@@ -126,6 +131,7 @@ class Task(Base):
     status: Mapped[TaskStatus] = mapped_column(Enum(TaskStatus), default=TaskStatus.TODO)
     priority: Mapped[TaskPriority] = mapped_column(Enum(TaskPriority), default=TaskPriority.MEDIUM)
     estimated_hours: Mapped[float] = mapped_column(Float, default=1.0)
+    gitlab_issue_iid: Mapped[int | None]
     created_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(

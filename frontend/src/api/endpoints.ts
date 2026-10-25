@@ -4,6 +4,7 @@ import type {
   Analytics,
   ApprovedTask,
   DraftGroup,
+  GitLabSync,
   Material,
   MaterialType,
   Member,
@@ -67,4 +68,8 @@ export const analyticsApi = {
   get: (projectId: number) => http.get<Analytics>(`/api/projects/${projectId}/analytics`),
   export: (projectId: number, format: "csv" | "json") =>
     http.download(`/api/projects/${projectId}/analytics/export?format=${format}`, `analytics.${format}`),
+};
+
+export const gitlabApi = {
+  sync: (projectId: number) => http.post<GitLabSync>(`/api/projects/${projectId}/gitlab/sync`),
 };

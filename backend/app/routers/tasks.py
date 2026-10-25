@@ -14,6 +14,7 @@ from app.schemas import (
     TaskUpdate,
 )
 from app.services.ai_service import compute_progress
+from app.services.gitlab_service import archive_task_issue, sync_task_to_gitlab
 
 router = APIRouter(prefix="/api", tags=["tasks"])
 
@@ -60,6 +61,8 @@ async def create_task(
     await db.commit()
     await db.refresh(task)
     await update_progress(db, project_id)
+    # Best-effort: создает issue в GitLab, если у проекта есть репозиторий
+    await sync_task_to_gitlab(db, task)
     return task
 
 
@@ -121,6 +124,9 @@ async def approve_batch(
     for t in approved:
         await db.refresh(t)
     await update_progress(db, project_id)
+    # Issues создаются только после утверждения (TODO), чтобы черновики не мусорили GitLab
+    for t in approved:
+        await sync_task_to_gitlab(db, t)
     return ApproveBatchOut(approved=[TaskOut.model_validate(t) for t in approved], rejected_count=rejected)
 
 
@@ -149,6 +155,8 @@ async def update_task(
     await db.refresh(task)
     if "status" in changes or "estimated_hours" in changes:
         await update_progress(db, task.project_id)
+    if changes.keys() & {"title", "description", "status", "priority", "assignee_id"}:
+        await sync_task_to_gitlab(db, task)
     return task
 
 
@@ -156,6 +164,8 @@ async def update_task(
 async def delete_task(task_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     task = await _task_with_access(db, task_id, user)
     project_id = task.project_id
+    # Закрываем issue и снимаем метку, чтобы импорт не воскресил задачу
+    await archive_task_issue(db, task)
     await db.delete(task)
     await db.commit()
     await update_progress(db, project_id)

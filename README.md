@@ -32,15 +32,44 @@ npm run dev                   # http://localhost:5173, /api проксирует
 {
   "mcpServers": {
     "hacklaunch": {
-      "command": "/abs/path/xoxoton/backend/.venv/bin/python",
-      "args": ["/abs/path/xoxoton/backend/mcp_server.py"],
-      "cwd": "/abs/path/xoxoton/backend"
+      "command": "/abs/path/HackLaunch/backend/.venv/bin/python",
+      "args": ["/abs/path/HackLaunch/backend/mcp_server.py"],
+      "cwd": "/abs/path/HackLaunch/backend"
     }
   }
 }
 ```
 
 Tools: `generate_tasks_from_prompt`, `get_project_health`, `create_single_task`, `assign_task`, `update_task_status`.
+
+## GitLab: репозиторий, участники и задачи
+
+При создании проекта с включённым `auto_create_gitlab` бэкенд создаёт приватный репозиторий в GitLab и приглашает создателя. Каждый добавленный в проект участник с заполненным `gitlab_username` получает доступ Developer (`POST /api/projects/{id}/members`).
+
+Задачи синхронизируются с issues GitLab:
+- issue создаётся при утверждении черновика ИИ или создании задачи вручную (статус `TODO`);
+- изменения названия/описания/приоритета/исполнителя и перевод в `DONE` обновляют issue (закрывают его);
+- удаление задачи закрывает issue и снимает метку `GITLAB_TASK_LABEL`, чтобы импорт её не воскресил;
+- обратный импорт подтягивает issues с этой меткой как задачи проекта (`open` → `TODO/IN_PROGRESS/REVIEW`, `closed` → `DONE`), дедупликация по `iid` (`Task.gitlab_issue_iid`).
+
+**Ручная синхронизация:** кнопка «GitLab» на доске или `POST /api/projects/{id}/gitlab/sync` (CAPTAIN/MEMBER). Она же приглашает всех участников с `gitlab_username`.
+
+**Вебхуки (синхронизация на каждый push/issue):**
+
+```bash
+# backend/.env
+USE_MOCK_GITLAB=false
+GITLAB_TOKEN=...                  # scope api
+GITLAB_WEBHOOK_URL=https://<public-host>/api/webhooks/gitlab
+GITLAB_WEBHOOK_SECRET=<random>
+GITLAB_TASK_LABEL=hacklaunch
+```
+
+В dev публичный URL удобно получить через `ngrok http 8000` (или cloudflared). Вебхук регистрируется автоматически при создании репозитория, а для уже существующего — после ручной синхронизации. GitLab присылает `X-Gitlab-Token`; без совпадения с секретом эндпоинт отвечает 401.
+
+Без токена (`USE_MOCK_GITLAB=true`, по умолчанию) работает `MockGitLabClient`: репозиторий и issues живут в памяти процесса, поэтому весь сценарий можно показать без сети. Ограничения: `gitlab_username` должен существовать в вашем GitLab, токен должен видеть пользователей, а вебхуки требуют публичный HTTPS-URL.
+
+Колонка `tasks.gitlab_issue_iid` добавляется автоматически при старте (create_all + лёгкая миграция для старых dev-баз).
 
 ## Структура
 
