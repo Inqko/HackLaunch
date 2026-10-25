@@ -2,7 +2,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore", env_ignore_empty=True)
+    # .env.shared — общие настройки команды (может лежать в git),
+    # .env — локальные переопределения и секреты (в .gitignore).
+    model_config = SettingsConfigDict(
+        env_file=(".env.shared", ".env"), extra="ignore", env_ignore_empty=True
+    )
 
     database_url: str = "sqlite+aiosqlite:///./hacklaunch.db"
 
