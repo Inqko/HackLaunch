@@ -2,7 +2,8 @@ import { BarChart3, GitBranch, LayoutDashboard, ListTodo, Trash2, Users } from "
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
 import { projectsApi } from "@/api/endpoints";
-import type { ProjectDetail } from "@/api/types";
+import type { ProjectDetail, Task } from "@/api/types";
+import { useAuth } from "@/context/AuthContext";
 import { ProjectContext } from "@/context/ProjectContext";
 import { ROLE_LABELS } from "@/lib/labels";
 import { cn, errorMessage } from "@/lib/utils";
@@ -14,11 +15,12 @@ const TABS = [
   { to: "", label: "Доска", icon: LayoutDashboard, end: true },
   { to: "my-workspace", label: "Мои задачи", icon: ListTodo },
   { to: "team", label: "Команда", icon: Users },
-  { to: "analytics", label: "Аналитика", icon: BarChart3 },
+  { to: "analytics", label: "Аналитика", icon: BarChart3, editorsOnly: true },
 ];
 
 export default function ProjectLayout() {
   const projectId = Number(useParams().id);
+  const { user } = useAuth();
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState("");
   const [repoModalOpen, setRepoModalOpen] = useState(false);
@@ -42,9 +44,10 @@ export default function ProjectLayout() {
 
   const isCaptain = project.my_role === "CAPTAIN";
   const canEdit = project.my_role !== "VIEWER";
+  const canManageTask = (task: Task) => isCaptain || (canEdit && task.assignee_id === user?.id);
 
   return (
-    <ProjectContext.Provider value={{ project, reload, isCaptain, canEdit }}>
+    <ProjectContext.Provider value={{ project, reload, isCaptain, canEdit, canManageTask }}>
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <h1 className="truncate text-2xl font-bold">{project.name}</h1>
@@ -76,7 +79,7 @@ export default function ProjectLayout() {
       {isCaptain && <DeleteProjectModal project={project} open={deleting} onClose={() => setDeleting(false)} />}
 
       <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-slate-200">
-        {TABS.map(({ to, label, icon: Icon, end }) => (
+        {TABS.filter((tab) => canEdit || !tab.editorsOnly).map(({ to, label, icon: Icon, end }) => (
           <NavLink
             key={label}
             to={to}

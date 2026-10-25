@@ -19,6 +19,10 @@ from app.services.gitlab_service import archive_task_issue, sync_task_to_gitlab
 router = APIRouter(prefix="/api", tags=["tasks"])
 
 
+def is_captain(membership: ProjectMember) -> bool:
+    return membership.role == ProjectRole.CAPTAIN
+
+
 async def ensure_assignee(db: AsyncSession, project_id: int, assignee_id: int | None) -> None:
     if assignee_id is None:
         return
@@ -53,8 +57,13 @@ async def my_tasks(project_id: int, me: ProjectMember = Depends(ANY_MEMBER), db:
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskOut, status_code=status.HTTP_201_CREATED)
 async def create_task(
-    project_id: int, data: TaskCreate, _: ProjectMember = Depends(CAN_EDIT), db: AsyncSession = Depends(get_db)
+    project_id: int, data: TaskCreate, me: ProjectMember = Depends(CAN_EDIT), db: AsyncSession = Depends(get_db)
 ):
+    # Участник может завести задачу только себе; раздаёт задачи капитан
+    if not is_captain(me):
+        if data.assignee_id not in (None, me.user_id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Участник может создавать задачи только себе")
+        data.assignee_id = me.user_id
     await ensure_assignee(db, project_id, data.assignee_id)
     task = Task(project_id=project_id, status=TaskStatus.TODO, **data.model_dump())
     db.add(task)
@@ -130,23 +139,31 @@ async def approve_batch(
     return ApproveBatchOut(approved=[TaskOut.model_validate(t) for t in approved], rejected_count=rejected)
 
 
-async def _task_with_access(db: AsyncSession, task_id: int, user: User) -> Task:
+async def _task_with_access(
+    db: AsyncSession, task_id: int, user: User, *roles: ProjectRole
+) -> tuple[Task, ProjectMember]:
     task = await db.get(Task, task_id)
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Задача не найдена")
-    roles = (ProjectRole.CAPTAIN,) if task.status == TaskStatus.AI_DRAFT else (ProjectRole.CAPTAIN, ProjectRole.MEMBER)
-    check_role(await get_membership(db, task.project_id, user.id), roles)
-    return task
+    if task.status == TaskStatus.AI_DRAFT:
+        roles = (ProjectRole.CAPTAIN,)
+    me = check_role(await get_membership(db, task.project_id, user.id), roles)
+    return task, me
 
 
 @router.patch("/tasks/{task_id}", response_model=TaskOut)
 async def update_task(
     task_id: int, data: TaskUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    task = await _task_with_access(db, task_id, user)
+    task, me = await _task_with_access(db, task_id, user, ProjectRole.CAPTAIN, ProjectRole.MEMBER)
     changes = data.model_dump(exclude_unset=True)
     if changes.get("status") == TaskStatus.AI_DRAFT:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя вернуть задачу в черновики")
+    if not is_captain(me):
+        if task.assignee_id != me.user_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Можно менять только свои задачи")
+        if changes.get("assignee_id", me.user_id) != me.user_id:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Переназначать задачи может только капитан")
     if "assignee_id" in changes:
         await ensure_assignee(db, task.project_id, changes["assignee_id"])
     for field, value in changes.items():
@@ -162,7 +179,7 @@ async def update_task(
 
 @router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_task(task_id: int, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    task = await _task_with_access(db, task_id, user)
+    task, _ = await _task_with_access(db, task_id, user, ProjectRole.CAPTAIN)
     project_id = task.project_id
     # Закрываем issue и снимаем метку, чтобы импорт не воскресил задачу
     await archive_task_issue(db, task)

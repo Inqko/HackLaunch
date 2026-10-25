@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from app.models import (
     HealthStatus,
@@ -143,6 +143,15 @@ class TaskOut(ORMModel):
     gitlab_issue_iid: int | None = None
     created_at: datetime
     updated_at: datetime
+    completed_at: datetime | None = None
+
+    @field_validator("created_at", "updated_at", "completed_at")
+    @classmethod
+    def _as_utc(cls, value: datetime | None) -> datetime | None:
+        # SQLite теряет часовой пояс, а браузер читает дату без него как локальную
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value
 
 
 class TaskCreate(BaseModel):
@@ -236,6 +245,7 @@ class MaterialOut(BaseModel):
     target_url: str
     access_mode: Literal["EDIT", "VIEW"]
     can_edit: bool
+    can_delete: bool = False
     created_at: datetime
 
 
@@ -258,6 +268,8 @@ class MemberStats(BaseModel):
 
 class AnalyticsOut(BaseModel):
     project_id: int
+    # TEAM — вся команда (капитан); PERSONAL — только своя строка (участник)
+    scope: Literal["TEAM", "PERSONAL"] = "TEAM"
     total_tasks: int
     completed_tasks: int
     total_commits: int

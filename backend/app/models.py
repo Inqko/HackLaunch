@@ -12,6 +12,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    event,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -151,6 +152,19 @@ class Task(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
+    # Момент перехода в DONE. updated_at для этого не годится: он меняется при любой
+    # правке и при синхронизации с GitLab, и аналитика «закрыто сегодня» врала
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+@event.listens_for(Task.status, "set")
+def _track_completion(task: Task, value: TaskStatus, oldvalue, initiator) -> None:
+    # Ловим все пути смены статуса: API, импорт из GitLab, MCP
+    if value == TaskStatus.DONE:
+        if task.completed_at is None:
+            task.completed_at = utcnow()
+    else:
+        task.completed_at = None
 
 
 class ProjectMaterial(Base):

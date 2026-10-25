@@ -32,7 +32,8 @@ interface TaskWithProject {
 const STATUS_ORDER: TaskStatus[] = ["TODO", "IN_PROGRESS", "REVIEW", "DONE"];
 const PRIORITY_ORDER: Record<TaskPriority, number> = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
 
-function isToday(iso: string): boolean {
+function isToday(iso: string | null): boolean {
+  if (!iso) return false;
   const date = new Date(iso);
   const now = new Date();
   return (
@@ -44,7 +45,7 @@ function isToday(iso: string): boolean {
 
 export default function CabinetPage() {
   const { user } = useAuth();
-  const timer = useWorkTimer();
+  const timer = useWorkTimer(user?.id);
   const [projects, setProjects] = useState<ProjectSummary[]>([]);
   const [items, setItems] = useState<TaskWithProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -85,7 +86,7 @@ export default function CabinetPage() {
     [items, projectFilter],
   );
 
-  const doneToday = filtered.filter((item) => item.task.status === "DONE" && isToday(item.task.updated_at));
+  const doneToday = filtered.filter((item) => item.task.status === "DONE" && isToday(item.task.completed_at));
   const open = filtered.filter((item) => item.task.status !== "DONE");
   const inProgress = filtered.filter((item) => item.task.status === "IN_PROGRESS");
   const hoursLeft = open.reduce((sum, item) => sum + item.task.estimated_hours, 0);
@@ -410,7 +411,7 @@ function TaskRow({
           )}
         </div>
       )}
-      {task.status === "DONE" && isToday(task.updated_at) && (
+      {task.status === "DONE" && isToday(task.completed_at) && (
         <p className="mt-2 text-xs font-medium text-emerald-600">Выполнено сегодня</p>
       )}
     </div>

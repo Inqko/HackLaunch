@@ -32,7 +32,10 @@ def _score(tasks_completed: int, hours: float, commits: int, mrs: int) -> float:
     return tasks_completed * 2 + hours + commits * 0.5 + mrs * 2
 
 
-async def build_analytics(db: AsyncSession, project: Project) -> AnalyticsOut:
+async def build_analytics(
+    db: AsyncSession, project: Project, only_user_id: int | None = None
+) -> AnalyticsOut:
+    """Статистика команды. С only_user_id остаётся одна строка (вклад в % — от всей команды)."""
     tasks = list(await db.scalars(
         select(Task).where(Task.project_id == project.id, Task.status != TaskStatus.AI_DRAFT)
     ))
@@ -72,8 +75,13 @@ async def build_analytics(db: AsyncSession, project: Project) -> AnalyticsOut:
     for r, s in zip(rows, scores):
         r.contribution_percent = round(100 * s / total_score, 1) if total_score else 0.0
 
+    if only_user_id is not None:
+        rows = [r for r in rows if r.user_id == only_user_id]
+        tasks = [t for t in tasks if t.assignee_id == only_user_id]
+
     return AnalyticsOut(
         project_id=project.id,
+        scope="TEAM" if only_user_id is None else "PERSONAL",
         total_tasks=len(tasks),
         completed_tasks=sum(t.status == TaskStatus.DONE for t in tasks),
         total_commits=sum(r.gitlab_commits for r in rows),

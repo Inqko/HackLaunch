@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import ANY_MEMBER, fetch_project
-from app.models import ProjectMember
+from app.deps import CAN_EDIT, CAPTAIN_ONLY, fetch_project
+from app.models import ProjectMember, ProjectRole
 from app.schemas import AnalyticsOut
 from app.services.analytics_service import analytics_to_csv, build_analytics
 
@@ -13,15 +13,17 @@ router = APIRouter(prefix="/api/projects/{project_id}/analytics", tags=["analyti
 
 
 @router.get("", response_model=AnalyticsOut)
-async def get_analytics(project_id: int, _: ProjectMember = Depends(ANY_MEMBER), db: AsyncSession = Depends(get_db)):
-    return await build_analytics(db, await fetch_project(db, project_id))
+async def get_analytics(project_id: int, me: ProjectMember = Depends(CAN_EDIT), db: AsyncSession = Depends(get_db)):
+    # Капитан видит всю команду, участник — только свою статистику
+    only_user_id = None if me.role == ProjectRole.CAPTAIN else me.user_id
+    return await build_analytics(db, await fetch_project(db, project_id), only_user_id=only_user_id)
 
 
 @router.get("/export")
 async def export_analytics(
     project_id: int,
     format: Literal["csv", "json"] = "csv",
-    _: ProjectMember = Depends(ANY_MEMBER),
+    _: ProjectMember = Depends(CAPTAIN_ONLY),
     db: AsyncSession = Depends(get_db),
 ):
     data = await build_analytics(db, await fetch_project(db, project_id))
