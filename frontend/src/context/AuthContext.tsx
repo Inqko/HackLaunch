@@ -8,6 +8,7 @@ interface AuthContextValue {
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (data: { email: string; name: string; password: string; gitlab_username?: string }) => Promise<void>;
+  updateProfile: (data: { name?: string; gitlab_username?: string | null }) => Promise<User>;
   logout: () => void;
 }
 
@@ -39,6 +40,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loading,
     login: async (email, password) => accept(await authApi.login({ email, password })),
     register: async (data) => accept(await authApi.register(data)),
+    updateProfile: async (data) => {
+      const updated = await authApi.updateMe(data);
+      setUser(updated);
+      return updated;
+    },
     logout: () => {
       tokenStore.clear();
       setUser(null);

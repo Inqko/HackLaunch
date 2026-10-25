@@ -23,7 +23,7 @@ export const authApi = {
     http.post<TokenResponse>("/api/auth/register", data),
   login: (data: { email: string; password: string }) => http.post<TokenResponse>("/api/auth/login", data),
   me: () => http.get<User>("/api/users/me"),
-  updateMe: (data: { name?: string; gitlab_username?: string }) => http.patch<User>("/api/users/me", data),
+  updateMe: (data: { name?: string; gitlab_username?: string | null }) => http.patch<User>("/api/users/me", data),
 };
 
 export const projectsApi = {
