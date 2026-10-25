@@ -6,6 +6,7 @@ import { Button, ErrorText } from "@/components/ui";
 import { useProject } from "@/context/ProjectContext";
 import { BOARD_COLUMNS, STATUS_LABELS } from "@/lib/labels";
 import { cn, errorMessage } from "@/lib/utils";
+import { ReviewModal } from "./ReviewModal";
 import { TaskCard } from "./TaskCard";
 import { TaskFormModal } from "./TaskFormModal";
 
@@ -16,6 +17,7 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
   const [syncing, setSyncing] = useState(false);
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
+  const [reviewTask, setReviewTask] = useState<Task | null>(null);
   const members = new Map(project.members.map((m) => [m.user_id, m]));
 
   const moveTo = async (taskId: number, status: TaskStatus) => {
@@ -106,6 +108,7 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
                     assignee={t.assignee_id ? members.get(t.assignee_id) : undefined}
                     draggable={canEdit}
                     onDelete={canEdit ? () => remove(t) : undefined}
+                    onOpenReview={() => setReviewTask(t)}
                   />
                 ))}
               </div>
@@ -113,6 +116,8 @@ export function KanbanBoard({ tasks, onChange }: { tasks: Task[]; onChange: () =
           );
         })}
       </div>
+
+      <ReviewModal task={reviewTask} onClose={() => setReviewTask(null)} onChanged={onChange} />
 
       <TaskFormModal
         open={adding}

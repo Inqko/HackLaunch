@@ -1,4 +1,4 @@
-import type { HealthStatus, MaterialType, ProjectRole, Specialization, TaskPriority, TaskStatus } from "@/api/types";
+import type { HealthStatus, MaterialType, ProjectRole, ReviewState, Specialization, TaskPriority, TaskStatus } from "@/api/types";
 
 export const ROLE_LABELS: Record<ProjectRole, string> = {
   CAPTAIN: "Капитан",
@@ -58,4 +58,20 @@ export const MATERIAL_LABELS: Record<MaterialType, string> = {
   GOOGLE_DOCS: "Google Документ",
   FIGMA: "Figma",
   OTHER: "Ссылка",
+};
+
+export const REVIEW_STATE_LABELS: Record<ReviewState, { label: string; className: string }> = {
+  AI_REVIEWING: { label: "ИИ проверяет…", className: "bg-violet-100 text-violet-700" },
+  CHANGES_REQUESTED: { label: "Замечания ИИ", className: "bg-amber-100 text-amber-800" },
+  AWAITING_CAPTAIN: { label: "Ждет капитана", className: "bg-sky-100 text-sky-700" },
+  CAPTAIN_REJECTED: { label: "Отклонено капитаном", className: "bg-red-100 text-red-700" },
+  MERGED: { label: "MR влит", className: "bg-emerald-100 text-emerald-700" },
+};
+
+export const REVIEW_VERDICT_LABELS: Record<string, { label: string; className: string }> = {
+  APPROVE: { label: "ИИ одобрил", className: "bg-emerald-100 text-emerald-700" },
+  CHANGES_REQUESTED: { label: "ИИ: нужны исправления", className: "bg-amber-100 text-amber-800" },
+  SKIPPED: { label: "ИИ недоступен", className: "bg-slate-100 text-slate-700" },
+  MERGED: { label: "Капитан влил MR", className: "bg-emerald-100 text-emerald-700" },
+  REJECTED: { label: "Капитан отклонил", className: "bg-red-100 text-red-700" },
 };

@@ -1,19 +1,22 @@
-import { Clock, Sparkles, Trash2 } from "lucide-react";
+import { Bot, Clock, Sparkles, Trash2 } from "lucide-react";
 import type { Member, Task } from "@/api/types";
 import { Badge } from "@/components/ui";
-import { PRIORITY_COLORS, PRIORITY_LABELS, SPEC_LABELS } from "@/lib/labels";
+import { PRIORITY_COLORS, PRIORITY_LABELS, REVIEW_STATE_LABELS, SPEC_LABELS } from "@/lib/labels";
 
 export function TaskCard({
   task,
   assignee,
   draggable,
   onDelete,
+  onOpenReview,
 }: {
   task: Task;
   assignee?: Member;
   draggable?: boolean;
   onDelete?: () => void;
+  onOpenReview?: () => void;
 }) {
+  const review = task.review_state ? REVIEW_STATE_LABELS[task.review_state] : null;
   return (
     <div
       draggable={draggable}
@@ -41,6 +44,19 @@ export function TaskCard({
       </div>
       {/* На карточке — только первый абзац (цель), шаги и критерии видны в личном кабинете */}
       {task.description && <p className="mb-2 line-clamp-2 text-xs text-slate-500">{task.description.split("\n\n")[0]}</p>}
+      {review && (
+        <button
+          type="button"
+          onClick={onOpenReview}
+          className="mb-2 inline-flex items-center gap-1 rounded-full text-left hover:opacity-80"
+          title="Открыть ревью"
+        >
+          <Badge className={review.className}>
+            <Bot className="mr-1 h-3 w-3" />
+            {review.label}
+          </Badge>
+        </button>
+      )}
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge className={PRIORITY_COLORS[task.priority]}>{PRIORITY_LABELS[task.priority]}</Badge>
         <span className="inline-flex items-center gap-0.5 text-xs text-slate-500">

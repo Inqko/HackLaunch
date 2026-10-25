@@ -27,6 +27,17 @@ export default function ProjectBoardPage() {
     loadTasks();
   }, [loadTasks]);
 
+  // Пока ИИ проверяет какую-то задачу — обновляем доску, чтобы увидеть вердикт
+  const reviewing = tasks.some((t) => t.review_state === "AI_REVIEWING");
+  useEffect(() => {
+    if (!reviewing) return;
+    const timer = setInterval(() => {
+      loadTasks();
+      reload();
+    }, 4000);
+    return () => clearInterval(timer);
+  }, [reviewing, loadTasks, reload]);
+
   // После изменения задач обновляем и доску, и процент готовности в шапке AI Pulse
   const onTasksChanged = () => {
     loadTasks();

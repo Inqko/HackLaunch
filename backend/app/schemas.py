@@ -7,6 +7,7 @@ from app.models import (
     HealthStatus,
     MaterialType,
     ProjectRole,
+    ReviewState,
     Specialization,
     TaskPriority,
     TaskStatus,
@@ -141,6 +142,10 @@ class TaskOut(ORMModel):
     created_by_ai: bool
     # Добавлено вместе с мостом GitLab; nullable — контракт обратно совместим
     gitlab_issue_iid: int | None = None
+    # ИИ-ревью
+    branch_name: str | None = None
+    review_state: ReviewState | None = None
+    gitlab_mr_iid: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -186,6 +191,35 @@ class ApproveBatchIn(BaseModel):
 class ApproveBatchOut(BaseModel):
     approved: list[TaskOut]
     rejected_count: int
+
+
+# --- ИИ-ревью ---
+
+class ReviewIssue(BaseModel):
+    file: str | None = None
+    line: int | None = None
+    comment: str
+
+
+class TaskReviewOut(ORMModel):
+    id: int
+    reviewer: str
+    verdict: str
+    summary: str
+    issues: list[ReviewIssue]
+    commit_sha: str | None
+    author_id: int | None
+    created_at: datetime
+
+
+class TaskReviewsOut(BaseModel):
+    task: TaskOut
+    mr_url: str | None
+    reviews: list[TaskReviewOut]
+
+
+class ReviewRejectIn(BaseModel):
+    comment: str = Field(min_length=1)
 
 
 # --- AI ---

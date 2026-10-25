@@ -31,6 +31,15 @@ def _apply_light_migrations(conn) -> None:
     columns = {column["name"] for column in inspector.get_columns("tasks")}
     if "gitlab_issue_iid" not in columns:
         conn.execute(text("ALTER TABLE tasks ADD COLUMN gitlab_issue_iid INTEGER"))
+    # Колонки ИИ-ревью
+    for name, ddl in (
+        ("branch_name", "VARCHAR(255)"),
+        ("review_state", "VARCHAR(32)"),
+        ("gitlab_mr_iid", "INTEGER"),
+        ("reviewed_sha", "VARCHAR(64)"),
+    ):
+        if name not in columns:
+            conn.execute(text(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}"))
     conn.execute(
         text(
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_tasks_project_gitlab_iid "

@@ -16,6 +16,7 @@ import type {
   Specialization,
   Task,
   TaskInput,
+  TaskReviews,
   TaskStatus,
   TokenResponse,
   User,
@@ -96,4 +97,12 @@ export const gitlabApi = {
   attach: (projectId: number, repo_url: string) =>
     http.put<GitLabAttach>(`/api/projects/${projectId}/gitlab/repository`, { repo_url }),
   detach: (projectId: number) => http.del(`/api/projects/${projectId}/gitlab/repository`),
+};
+
+export const reviewApi = {
+  /** Отправить задачу на ИИ-ревью (после push в ветку задачи) */
+  submit: (taskId: number) => http.post<Task>(`/api/tasks/${taskId}/review/submit`),
+  list: (taskId: number) => http.get<TaskReviews>(`/api/tasks/${taskId}/reviews`),
+  approve: (taskId: number) => http.post<Task>(`/api/tasks/${taskId}/review/approve`),
+  reject: (taskId: number, comment: string) => http.post<Task>(`/api/tasks/${taskId}/review/reject`, { comment }),
 };

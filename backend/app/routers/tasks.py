@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import ANY_MEMBER, CAN_EDIT, CAPTAIN_ONLY, check_role, fetch_project, get_current_user, get_membership
-from app.models import ProjectMember, ProjectRole, Task, TaskStatus, User
+from app.models import Project, ProjectMember, ProjectRole, Task, TaskStatus, User
 from app.schemas import (
     ApproveBatchIn,
     ApproveBatchOut,
@@ -15,6 +15,7 @@ from app.schemas import (
 )
 from app.services.ai_service import compute_progress
 from app.services.gitlab_service import archive_task_issue, sync_task_to_gitlab
+from app.services.review_service import ensure_task_branch
 
 router = APIRouter(prefix="/api", tags=["tasks"])
 
@@ -149,10 +150,18 @@ async def update_task(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Нельзя вернуть задачу в черновики")
     if "assignee_id" in changes:
         await ensure_assignee(db, task.project_id, changes["assignee_id"])
+    status_changed = "status" in changes and changes["status"] != task.status
     for field, value in changes.items():
         setattr(task, field, value)
+    if status_changed:
+        # Ручная смена статуса (доска, кнопки) выходит из цикла ИИ-ревью
+        task.review_state = None
     await db.commit()
     await db.refresh(task)
+    if status_changed and task.status == TaskStatus.IN_PROGRESS:
+        project = await db.get(Project, task.project_id)
+        await ensure_task_branch(db, task, project)
+        await db.refresh(task)
     if "status" in changes or "estimated_hours" in changes:
         await update_progress(db, task.project_id)
     if changes.keys() & {"title", "description", "status", "priority", "assignee_id"}:

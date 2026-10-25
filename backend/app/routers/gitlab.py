@@ -20,6 +20,7 @@ from app.database import SessionLocal, get_db
 from app.deps import CAN_EDIT, CAPTAIN_ONLY, fetch_project
 from app.models import Project, ProjectMember
 from app.schemas import GitLabConnectIn, GitLabConnectOut, GitLabSyncOut
+from app.services import review_service
 from app.services.gitlab_service import (
     attach_repository,
     sync_issues_from_gitlab,
@@ -161,4 +162,12 @@ async def gitlab_webhook(
         return {"status": "ignored"}
 
     background_tasks.add_task(_sync_issues_in_background, project.id)
+    if x_gitlab_event == "Push Hook" and payload.get("ref"):
+        # Push в ветку task-<id>-... запускает ИИ-ревью задачи
+        background_tasks.add_task(
+            review_service.on_push,
+            gitlab_project_id,
+            payload["ref"],
+            payload.get("checkout_sha") or payload.get("after"),
+        )
     return {"status": "accepted"}

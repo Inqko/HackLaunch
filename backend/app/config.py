@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
 
+    # ИИ-ревью: как часто проверять ветки задач на новые коммиты (0 — выключить опрос;
+    # с вебхуком GitLab или кнопкой «На ревью» опрос не обязателен)
+    review_poll_seconds: int = 60
+
     password_code_ttl_minutes: int = 10
 
     # SMTP для писем с кодом подтверждения. Без SMTP_HOST код пишется в лог,

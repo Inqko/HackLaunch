@@ -60,6 +60,16 @@ class MaterialType(str, enum.Enum):
     OTHER = "OTHER"
 
 
+class ReviewState(str, enum.Enum):
+    """Подстатус ревью: колонки доски остаются прежними, это уточнение внутри них."""
+
+    AI_REVIEWING = "AI_REVIEWING"  # REVIEW: ИИ проверяет diff
+    CHANGES_REQUESTED = "CHANGES_REQUESTED"  # IN_PROGRESS: ИИ нашел ошибки
+    AWAITING_CAPTAIN = "AWAITING_CAPTAIN"  # REVIEW: MR создан, ждет решения капитана
+    CAPTAIN_REJECTED = "CAPTAIN_REJECTED"  # IN_PROGRESS: капитан отклонил
+    MERGED = "MERGED"  # DONE: MR влит
+
+
 class HealthStatus(str, enum.Enum):
     ON_TRACK = "ON_TRACK"
     AT_RISK = "AT_RISK"
@@ -146,6 +156,13 @@ class Task(Base):
     priority: Mapped[TaskPriority] = mapped_column(Enum(TaskPriority), default=TaskPriority.MEDIUM)
     estimated_hours: Mapped[float] = mapped_column(Float, default=1.0)
     gitlab_issue_iid: Mapped[int | None]
+    # ИИ-ревью: ветка задачи, MR и последний проверенный коммит
+    branch_name: Mapped[str | None] = mapped_column(String(255))
+    review_state: Mapped[ReviewState | None] = mapped_column(
+        Enum(ReviewState, native_enum=False, length=32)
+    )
+    gitlab_mr_iid: Mapped[int | None]
+    reviewed_sha: Mapped[str | None] = mapped_column(String(64))
     created_by_ai: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -163,4 +180,21 @@ class ProjectMaterial(Base):
     edit_url: Mapped[str] = mapped_column(String(1024))
     view_url: Mapped[str] = mapped_column(String(1024))
     created_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class TaskReview(Base):
+    """История ревью задачи: вердикты ИИ и решения капитана."""
+
+    __tablename__ = "task_reviews"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    reviewer: Mapped[str] = mapped_column(String(16))  # AI | CAPTAIN
+    # APPROVE | CHANGES_REQUESTED | SKIPPED (ИИ недоступен) | MERGED | REJECTED
+    verdict: Mapped[str] = mapped_column(String(32))
+    summary: Mapped[str] = mapped_column(Text)
+    issues: Mapped[list] = mapped_column(JSON, default=list)
+    commit_sha: Mapped[str | None] = mapped_column(String(64))
+    author_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

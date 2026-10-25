@@ -5,6 +5,7 @@ export type Specialization = "BACKEND" | "FRONTEND" | "ML" | "DESIGN" | "PM" | "
 export type TaskStatus = "AI_DRAFT" | "TODO" | "IN_PROGRESS" | "REVIEW" | "DONE";
 export type TaskPriority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type MaterialType = "GOOGLE_SLIDES" | "GOOGLE_DOCS" | "FIGMA" | "OTHER";
+export type ReviewState = "AI_REVIEWING" | "CHANGES_REQUESTED" | "AWAITING_CAPTAIN" | "CAPTAIN_REJECTED" | "MERGED";
 export type HealthStatus = "ON_TRACK" | "AT_RISK" | "DELAYED";
 
 export interface User {
@@ -68,6 +69,10 @@ export interface Task {
   created_by_ai: boolean;
   /** iid issue в GitLab; null — задача еще не синхронизирована */
   gitlab_issue_iid: number | null;
+  /** Ветка задачи в GitLab (появляется после «Взять в работу») */
+  branch_name: string | null;
+  review_state: ReviewState | null;
+  gitlab_mr_iid: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -144,4 +149,28 @@ export interface GitLabSync {
   members_skipped: number;
   tasks_created: number;
   tasks_updated: number;
+}
+
+export interface ReviewIssue {
+  file: string | null;
+  line: number | null;
+  comment: string;
+}
+
+export interface TaskReview {
+  id: number;
+  reviewer: "AI" | "CAPTAIN";
+  /** APPROVE | CHANGES_REQUESTED | SKIPPED | MERGED | REJECTED */
+  verdict: string;
+  summary: string;
+  issues: ReviewIssue[];
+  commit_sha: string | null;
+  author_id: number | null;
+  created_at: string;
+}
+
+export interface TaskReviews {
+  task: Task;
+  mr_url: string | null;
+  reviews: TaskReview[];
 }
