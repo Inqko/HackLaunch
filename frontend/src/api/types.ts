@@ -125,6 +125,13 @@ export interface Analytics {
   members_stats: MemberStats[];
 }
 
+export interface GitLabAttach {
+  /** null — ссылка сохранена, но GitLab пока не подтвердил репозиторий */
+  gitlab_project_id: number | null;
+  gitlab_repo_url: string;
+  warning: string | null;
+}
+
 export interface GitLabSync {
   members_invited: number;
   members_skipped: number;

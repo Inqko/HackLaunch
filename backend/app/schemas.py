@@ -59,7 +59,9 @@ class TokenOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=1)
     description: str = Field(min_length=1)
-    auto_create_gitlab: bool = True
+    # Репозиторий капитан создает сам на gitlab.com и прикрепляет ссылкой
+    gitlab_repo_url: str | None = None
+    auto_create_gitlab: bool = False
     specialization: Specialization = Specialization.PM
 
 
@@ -179,9 +181,14 @@ class AIStatusOut(BaseModel):
 
 # --- GitLab ---
 
+class GitLabConnectIn(BaseModel):
+    repo_url: str = Field(min_length=1)
+
+
 class GitLabConnectOut(BaseModel):
-    gitlab_project_id: int
+    gitlab_project_id: int | None  # None — ссылка сохранена, но GitLab пока не ответил
     gitlab_repo_url: str
+    warning: str | None = None
 
 
 class GitLabSyncOut(BaseModel):

@@ -13,7 +13,12 @@ from app.schemas import (
     ProjectDetail,
     ProjectOut,
 )
-from app.services.gitlab_service import invite_to_gitlab, trigger_gitlab_repo_creation
+from app.services.gitlab_service import (
+    attach_repository,
+    invite_to_gitlab,
+    parse_repo_url,
+    trigger_gitlab_repo_creation,
+)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -69,6 +74,13 @@ async def list_projects(user: User = Depends(get_current_user), db: AsyncSession
 async def create_project(
     data: ProjectCreate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
+    repo_url = (data.gitlab_repo_url or "").strip()
+    if repo_url:
+        try:
+            parse_repo_url(repo_url)  # плохую ссылку отклоняем до создания проекта
+        except ValueError as e:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+
     project = Project(name=data.name, description=data.description, created_by=user.id, ai_risks=[])
     project.members.append(
         ProjectMember(user_id=user.id, role=ProjectRole.CAPTAIN, specialization=data.specialization)
@@ -76,7 +88,9 @@ async def create_project(
     db.add(project)
     await db.commit()
 
-    if data.auto_create_gitlab:
+    if repo_url:
+        await attach_repository(db, project, repo_url)
+    elif data.auto_create_gitlab:
         await trigger_gitlab_repo_creation(db, project, [user])
 
     return project_detail(await fetch_project(db, project.id), ProjectRole.CAPTAIN)

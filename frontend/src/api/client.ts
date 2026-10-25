@@ -66,6 +66,7 @@ export const http = {
   get: <T>(path: string) => json<T>("GET", path),
   post: <T>(path: string, body?: unknown) => json<T>("POST", path, body ?? {}),
   patch: <T>(path: string, body: unknown) => json<T>("PATCH", path, body),
+  put: <T>(path: string, body: unknown) => json<T>("PUT", path, body),
   del: (path: string) => json<void>("DELETE", path),
 
   /** Скачивает файл с бэкенда, сохраняя имя из Content-Disposition */
