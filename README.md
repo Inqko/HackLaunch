@@ -95,12 +95,22 @@ frontend/src/
 
 ## Команда
 
-| # | Зона | Основные файлы |
-| :-- | :-- | :-- |
-| 1 | Backend Core & RBAC | `models.py`, `deps.py`, `routers/auth.py`, `routers/projects.py`, `routers/materials.py` |
-| 2 | AI Engine, Tasks & MCP | `routers/tasks.py`, `routers/ai.py`, `services/ai_service.py`, `mcp_server.py` |
-| 3 | GitLab & Analytics | `services/gitlab_service.py`, `services/analytics_service.py`, `routers/analytics.py` |
-| 4 | Frontend: Board & AI Flow | `pages/ProjectBoardPage.tsx`, `components/project/*` |
-| 5 | Frontend: Auth, Cabinet, Analytics | `pages/Login/Register/Projects/MyWorkspace/Team/AnalyticsPage.tsx`, `context/AuthContext.tsx` |
+| # | Зона | Ветка | Основные файлы |
+| :-- | :-- | :-- | :-- |
+| 1 | Backend Core & RBAC | `feature/backend-core` | `models.py`, `deps.py`, `routers/auth.py`, `routers/projects.py`, `routers/materials.py` |
+| 2 | AI Engine, Tasks & MCP | `feature/ai-tasks-mcp` | `routers/tasks.py`, `routers/ai.py`, `services/ai_service.py`, `mcp_server.py` |
+| 3 | GitLab & Analytics | `feature/gitlab-analytics` | `services/gitlab_service.py`, `services/analytics_service.py`, `routers/analytics.py` |
+| 4 | Frontend: Board & AI Flow | `feature/frontend-board` | `pages/ProjectBoardPage.tsx`, `components/project/*` |
+| 5 | Frontend: Auth, Cabinet, Analytics | `feature/frontend-cabinet` | `pages/Login/Register/Projects/MyWorkspace/Team/AnalyticsPage.tsx`, `context/AuthContext.tsx` |
 
-Работаем через ветки и PR в `main` — на каждый PR GitHub Action оставляет ИИ-отчет о прогрессе.
+### Git-флоу
+
+```bash
+git fetch origin
+git switch feature/<своя-ветка>        # ветка уже создана от main
+# ...работа, мелкие коммиты...
+git push
+# PR feature/<ветка> → main; на каждый PR GitHub Action оставляет ИИ-отчет о прогрессе
+```
+
+Чтобы подтянуть чужие влитые изменения: `git fetch origin && git merge origin/main` в своей ветке. Перед мержем PR — проверить, что `npm run build` и бэкенд запускаются.

@@ -21,13 +21,14 @@
 - Задачи AI_DRAFT видит и правит только CAPTAIN; в /tasks и /tasks/my они не попадают.
 - VIEWER никогда не получает edit_url материалов.
 - Демо должно работать без сети: любые внешние вызовы — с фоллбэком.
-- Работай в своей ветке, мелкими коммитами, затем PR в main.
+- Работай в своей ветке (см. таблицу «Команда» в README), мелкими коммитами, затем PR в main.
+  Перед началом: git fetch origin && git switch <своя-ветка> && git merge origin/main.
 - Не трогай файлы чужих зон без необходимости.
 ```
 
 ---
 
-## Участник 1 — Backend Core & RBAC
+## Участник 1 — Backend Core & RBAC (ветка `feature/backend-core`)
 
 ```
 Твоя зона: backend/app/models.py, deps.py, security.py, routers/auth.py, routers/projects.py, routers/materials.py.
@@ -42,7 +43,7 @@
 7. Проверить Swagger (/docs): у всех ручек понятные summary и примеры.
 ```
 
-## Участник 2 — AI Engine, Tasks & MCP
+## Участник 2 — AI Engine, Tasks & MCP (ветка `feature/ai-tasks-mcp`)
 
 ```
 Твоя зона: backend/app/services/ai_service.py, routers/tasks.py, routers/ai.py, backend/mcp_server.py.
@@ -58,7 +59,7 @@
 5. Фоллбэк-шаблоны (FALLBACK_TEMPLATES) сделать «умнее»: подставлять ключевые слова из описания проекта.
 ```
 
-## Участник 3 — GitLab Integration & Analytics
+## Участник 3 — GitLab Integration & Analytics (ветка `feature/gitlab-analytics`)
 
 ```
 Твоя зона: backend/app/services/gitlab_service.py, services/analytics_service.py, routers/analytics.py.
@@ -73,7 +74,7 @@
 5. Добавить в аналитику динамику: задачи, закрытые по часам (для графика на фронте).
 ```
 
-## Участник 4 — Frontend: Project Board & AI Flow
+## Участник 4 — Frontend: Project Board & AI Flow (ветка `feature/frontend-board`)
 
 ```
 Твоя зона: frontend/src/pages/ProjectBoardPage.tsx, frontend/src/components/project/*.
@@ -88,7 +89,7 @@
 5. Пустые состояния и лоадеры-скелетоны на доске.
 ```
 
-## Участник 5 — Frontend: Auth, Personal Cabinet & Analytics
+## Участник 5 — Frontend: Auth, Personal Cabinet & Analytics (ветка `feature/frontend-cabinet`)
 
 ```
 Твоя зона: frontend/src/pages/{Login,Register,Projects,MyWorkspace,Team,Analytics}Page.tsx,
