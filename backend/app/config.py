@@ -49,5 +49,9 @@ class Settings(BaseSettings):
     smtp_use_tls: bool = True
     email_debug: bool = True
 
+    # Загрузка файлов (аватары)
+    upload_dir: str = "uploads"
+    avatar_max_mb: int = 5
+
 
 settings = Settings()

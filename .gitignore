@@ -13,6 +13,9 @@ venv/
 # и только в приватный репозиторий.
 .env.shared
 
+# Uploads
+uploads/
+
 # Node
 node_modules/
 dist/

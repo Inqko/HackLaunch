@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from "react-router-dom";
 import { AppLayout, RequireAuth } from "./components/AppLayout";
 import ProjectLayout from "./components/ProjectLayout";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import CabinetPage from "./pages/CabinetPage";
 import LoginPage from "./pages/LoginPage";
 import MyWorkspacePage from "./pages/MyWorkspacePage";
 import ProjectBoardPage from "./pages/ProjectBoardPage";
@@ -22,6 +23,7 @@ export default function App() {
         }
       >
         <Route path="/projects" element={<ProjectsPage />} />
+        <Route path="/cabinet" element={<CabinetPage />} />
         <Route path="/projects/:id" element={<ProjectLayout />}>
           <Route index element={<ProjectBoardPage />} />
           <Route path="my-workspace" element={<MyWorkspacePage />} />

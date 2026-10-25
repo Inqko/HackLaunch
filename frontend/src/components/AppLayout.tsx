@@ -1,7 +1,9 @@
 import { KeyRound, LogOut, Rocket } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { Link, Navigate, Outlet, useLocation } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
+import { cn } from "@/lib/utils";
+import { Avatar } from "./Avatar";
 import { ChangePasswordModal } from "./ChangePasswordModal";
 import { Button, Spinner } from "./ui";
 
@@ -31,7 +33,19 @@ export function AppLayout() {
             HackLaunch AI
           </Link>
           <div className="flex items-center gap-3 text-sm">
-            <span className="hidden text-slate-600 sm:inline">{user?.name}</span>
+            <NavLink
+              to="/cabinet"
+              className={({ isActive }) =>
+                cn(
+                  "inline-flex items-center gap-2 rounded-md px-2 py-1.5 transition",
+                  isActive ? "bg-slate-100 text-slate-900" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+                )
+              }
+              title="Личный кабинет"
+            >
+              <Avatar src={user?.avatar_url} name={user?.name ?? "?"} className="h-7 w-7 text-xs" />
+              <span className="hidden sm:inline">{user?.name}</span>
+            </NavLink>
             <Button variant="ghost" size="sm" onClick={() => setPasswordOpen(true)} title="Сменить пароль">
               <KeyRound className="h-4 w-4" />
               <span className="hidden sm:inline">Пароль</span>

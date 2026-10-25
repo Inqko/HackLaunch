@@ -12,6 +12,7 @@ export interface User {
   email: string;
   name: string;
   gitlab_username: string | null;
+  avatar_url: string | null;
 }
 
 export interface TokenResponse {
@@ -30,6 +31,7 @@ export interface Member {
   name: string;
   email: string;
   gitlab_username: string | null;
+  avatar_url: string | null;
   role: ProjectRole;
   specialization: Specialization;
   joined_at: string;

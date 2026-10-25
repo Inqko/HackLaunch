@@ -26,7 +26,7 @@ export const authApi = {
     http.post<TokenResponse>("/api/auth/register", data),
   login: (data: { email: string; password: string }) => http.post<TokenResponse>("/api/auth/login", data),
   me: () => http.get<User>("/api/users/me"),
-  updateMe: (data: { name?: string; gitlab_username?: string }) => http.patch<User>("/api/users/me", data),
+  updateMe: (data: { name?: string; gitlab_username?: string | null }) => http.patch<User>("/api/users/me", data),
   requestPasswordChangeCode: (data: { current_password: string }) =>
     http.post<PasswordCodeSent>("/api/users/me/password/request-code", data),
   changePassword: (data: { current_password: string; new_password: string; code: string }) =>
@@ -35,6 +35,15 @@ export const authApi = {
     http.post<PasswordCodeSent>("/api/auth/password-reset/request", data),
   confirmPasswordReset: (data: { email: string; code: string; new_password: string }) =>
     http.post<void>("/api/auth/password-reset/confirm", data),
+};
+
+export const avatarApi = {
+  upload: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return http.upload<User>("/api/users/me/avatar", form);
+  },
+  remove: () => http.del<User>("/api/users/me/avatar"),
 };
 
 export const projectsApi = {

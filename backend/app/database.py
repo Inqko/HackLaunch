@@ -39,6 +39,20 @@ def _apply_light_migrations(conn) -> None:
     )
 
 
+async def _ensure_schema(conn) -> None:
+    """Лёгкая миграция для каркаса: create_all не меняет существующие таблицы."""
+    dialect = conn.dialect.name
+    if dialect == "sqlite":
+        cols = (await conn.exec_driver_sql("PRAGMA table_info(users)")).all()
+        names = {row[1] for row in cols}
+        if "avatar_url" not in names:
+            await conn.exec_driver_sql("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(512)")
+    elif dialect == "postgresql":
+        await conn.exec_driver_sql(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(512)"
+        )
+
+
 async def init_db() -> None:
     # Для каркаса таблицы создаются на старте; Alembic можно подключить позже
     from app import models  # noqa: F401
@@ -46,3 +60,4 @@ async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
         await conn.run_sync(_apply_light_migrations)
+        await _ensure_schema(conn)

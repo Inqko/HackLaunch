@@ -31,16 +31,23 @@ export class ApiError extends Error {
   }
 }
 
+/** Абсолютный URL для ресурсов бэкенда (картинки и т.п.), когда фронт и API на разных origin */
+export function apiUrl(path: string): string {
+  return path.startsWith("/") ? `${API_URL}${path}` : path;
+}
+
 async function request(method: string, path: string, body?: unknown): Promise<Response> {
   const headers: Record<string, string> = {};
-  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const isForm = body instanceof FormData;
+  // Для FormData Content-Type с boundary выставит сам браузер
+  if (body !== undefined && !isForm) headers["Content-Type"] = "application/json";
   const token = tokenStore.get();
   if (token) headers.Authorization = `Bearer ${token}`;
 
   const res = await fetch(`${API_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: isForm ? body : body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (res.status === 401) tokenStore.clear();
@@ -67,7 +74,8 @@ export const http = {
   post: <T>(path: string, body?: unknown) => json<T>("POST", path, body ?? {}),
   patch: <T>(path: string, body: unknown) => json<T>("PATCH", path, body),
   put: <T>(path: string, body: unknown) => json<T>("PUT", path, body),
-  del: (path: string) => json<void>("DELETE", path),
+  del: <T = void>(path: string) => json<T>("DELETE", path),
+  upload: <T>(path: string, form: FormData) => json<T>("POST", path, form),
 
   /** Скачивает файл с бэкенда, сохраняя имя из Content-Disposition */
   async download(path: string, fallbackName: string) {

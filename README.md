@@ -102,7 +102,7 @@ frontend/src/
   context/                  AuthContext, ProjectContext
   components/ui/            примитивы в стиле shadcn/ui
   components/project/       AIPulseWidget, KanbanBoard, CaptainApprovalModal, MaterialsWidget
-  pages/                    Login, Register, Projects, ProjectBoard, MyWorkspace, Team, Analytics
+  pages/                    Login, Register, Projects, ProjectBoard, MyWorkspace, Cabinet, Team, Analytics
 ```
 
 ## API

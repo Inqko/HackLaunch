@@ -8,6 +8,7 @@ pydantic-settings==2.16.1
 PyJWT==2.15.1
 bcrypt==5.0.0
 httpx==0.28.1
+python-multipart==0.0.32
 google-genai==2.33.0
 # mcp 2.x переименовал FastMCP в MCPServer — держимся 1.x
 mcp==1.30.0

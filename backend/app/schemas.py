@@ -36,6 +36,7 @@ class UserOut(ORMModel):
     email: str
     name: str
     gitlab_username: str | None
+    avatar_url: str | None
 
 
 class UserUpdate(BaseModel):
@@ -90,6 +91,7 @@ class MemberOut(BaseModel):
     name: str
     email: str
     gitlab_username: str | None
+    avatar_url: str | None
     role: ProjectRole
     specialization: Specialization
     joined_at: datetime
