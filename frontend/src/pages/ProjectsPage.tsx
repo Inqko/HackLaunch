@@ -77,7 +77,7 @@ function CreateProjectModal({ open, onClose }: { open: boolean; onClose: () => v
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [specialization, setSpecialization] = useState<Specialization>("PM");
-  const [autoGitlab, setAutoGitlab] = useState(true);
+  const [repoUrl, setRepoUrl] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -86,7 +86,7 @@ function CreateProjectModal({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(true);
     setError("");
     try {
-      const project = await projectsApi.create({ name, description, auto_create_gitlab: autoGitlab, specialization });
+      const project = await projectsApi.create({ name, description, specialization, gitlab_repo_url: repoUrl || undefined });
       navigate(`/projects/${project.id}`);
     } catch (err) {
       setError(errorMessage(err));
@@ -121,10 +121,17 @@ function CreateProjectModal({ open, onClose }: { open: boolean; onClose: () => v
             ))}
           </Select>
         </div>
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={autoGitlab} onChange={(e) => setAutoGitlab(e.target.checked)} />
-          Автоматически создать GitLab-репозиторий
-        </label>
+        <div>
+          <Label>Ссылка на GitLab-репозиторий (необязательно)</Label>
+          <Input value={repoUrl} onChange={(e) => setRepoUrl(e.target.value)} placeholder="https://gitlab.com/группа/репозиторий" />
+          <p className="mt-1 text-xs text-slate-500">
+            Создайте репозиторий на{" "}
+            <a href="https://gitlab.com/projects/new" target="_blank" rel="noreferrer" className="text-indigo-600 hover:underline">
+              gitlab.com
+            </a>{" "}
+            и вставьте ссылку. Можно прикрепить и позже — в шапке проекта.
+          </p>
+        </div>
         <ErrorText>{error}</ErrorText>
         <Button type="submit" className="w-full" disabled={busy}>
           {busy ? "Создаем..." : "Создать проект"}

@@ -4,6 +4,7 @@ import type {
   Analytics,
   ApprovedTask,
   DraftGroup,
+  GitLabAttach,
   GitLabSync,
   Material,
   MaterialType,
@@ -31,7 +32,7 @@ export const authApi = {
 
 export const projectsApi = {
   list: () => http.get<ProjectSummary[]>("/api/projects"),
-  create: (data: { name: string; description: string; auto_create_gitlab: boolean; specialization: Specialization }) =>
+  create: (data: { name: string; description: string; gitlab_repo_url?: string; specialization: Specialization }) =>
     http.post<ProjectDetail>("/api/projects", data),
   get: (id: number) => http.get<ProjectDetail>(`/api/projects/${id}`),
   addMember: (id: number, data: { email: string; role: ProjectRole; specialization: Specialization }) =>
@@ -74,7 +75,8 @@ export const analyticsApi = {
 
 export const gitlabApi = {
   sync: (projectId: number) => http.post<GitLabSync>(`/api/projects/${projectId}/gitlab/sync`),
-  /** Создать репозиторий для проекта без GitLab (только CAPTAIN) */
-  connect: (projectId: number) =>
-    http.post<{ gitlab_project_id: number; gitlab_repo_url: string }>(`/api/projects/${projectId}/gitlab/connect`),
+  /** Прикрепить репозиторий, созданный капитаном (только CAPTAIN) */
+  attach: (projectId: number, repo_url: string) =>
+    http.put<GitLabAttach>(`/api/projects/${projectId}/gitlab/repository`, { repo_url }),
+  detach: (projectId: number) => http.del(`/api/projects/${projectId}/gitlab/repository`),
 };

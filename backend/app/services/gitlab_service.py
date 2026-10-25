@@ -14,6 +14,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from typing import Protocol
+from urllib.parse import quote, urlparse
 
 import httpx
 from sqlalchemy import select
@@ -75,6 +76,8 @@ class ContributorStats:
 
 class GitLabClient(Protocol):
     async def create_repository(self, path: str, name: str, description: str) -> RepoInfo: ...
+
+    async def get_repository(self, path_with_namespace: str) -> RepoInfo: ...
 
     async def add_member(self, gitlab_project_id: int, username: str) -> None: ...
 
@@ -159,6 +162,13 @@ class RealGitLabClient:
             body["namespace_id"] = settings.gitlab_namespace_id
         async with self._client() as client:
             resp = await client.post("/projects", json=body)
+            resp.raise_for_status()
+            data = resp.json()
+        return RepoInfo(id=data["id"], web_url=data["web_url"])
+
+    async def get_repository(self, path_with_namespace: str) -> RepoInfo:
+        async with self._client() as client:
+            resp = await client.get(f"/projects/{quote(path_with_namespace, safe='')}")
             resp.raise_for_status()
             data = resp.json()
         return RepoInfo(id=data["id"], web_url=data["web_url"])
@@ -385,6 +395,13 @@ class MockGitLabClient:
             web_url=f"{settings.gitlab_url.rstrip('/')}/hacklaunch-demo/{path}",
         )
 
+    async def get_repository(self, path_with_namespace: str) -> RepoInfo:
+        digest = int(hashlib.md5(path_with_namespace.encode()).hexdigest()[:6], 16)
+        return RepoInfo(
+            id=100000 + digest % 900000,
+            web_url=f"{settings.gitlab_url.rstrip('/')}/{path_with_namespace}",
+        )
+
     async def add_member(self, gitlab_project_id: int, username: str) -> None:
         logger.info("[mock] add %s to GitLab project %s", username, gitlab_project_id)
 
@@ -533,6 +550,62 @@ async def _gitlab_username(db: AsyncSession, user_id: int | None) -> str | None:
         return None
     user = await db.get(User, user_id)
     return normalize_gitlab_username(user.gitlab_username) if user else None
+
+
+def parse_repo_url(url: str) -> tuple[str, str]:
+    """Ссылка на репозиторий -> (нормализованный web URL, path_with_namespace).
+
+    Понимает https://gitlab.com/group/sub/repo, ...repo.git, ...repo/-/tree/main
+    и SSH-вид git@gitlab.com:group/repo.git. Бросает ValueError на мусор.
+    """
+    url = url.strip()
+    ssh = re.fullmatch(r"git@([^:]+):(.+)", url)
+    if ssh:
+        host, path = ssh.group(1), ssh.group(2)
+        scheme = "https"
+    else:
+        parsed = urlparse(url if "://" in url else f"https://{url}")
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            raise ValueError("Ожидается ссылка вида https://gitlab.com/группа/репозиторий")
+        scheme, host, path = parsed.scheme, parsed.netloc, parsed.path
+    path = path.split("/-/")[0].strip("/").removesuffix(".git")
+    if path.count("/") < 1 or any(not part for part in path.split("/")):
+        raise ValueError("В ссылке должны быть группа (или пользователь) и имя репозитория")
+    return f"{scheme}://{host}/{path}", path
+
+
+async def attach_repository(db: AsyncSession, project: Project, repo_url: str) -> str | None:
+    """Прикрепляет готовый репозиторий, созданный капитаном.
+
+    Ссылка сохраняется всегда. ID репозитория (нужен для issues и статистики)
+    узнаем через API; если не вышло — возвращаем причину, ID можно будет
+    получить позже при синхронизации. Возвращает None при успехе.
+    """
+    web_url, path = parse_repo_url(repo_url)
+    project.gitlab_repo_url = web_url
+    project.gitlab_project_id = None
+    problem = None
+    try:
+        repo = await get_gitlab_client().get_repository(path)
+        project.gitlab_project_id = repo.id
+        project.gitlab_repo_url = repo.web_url
+    except httpx.HTTPStatusError as e:
+        logger.warning("GitLab repo %s lookup failed: %s", path, e.response.status_code)
+        problem = (
+            "Репозиторий не найден или нет доступа: создайте его в группе команды "
+            "или добавьте владельца токена GitLab в участники"
+            if e.response.status_code in (401, 403, 404)
+            else "GitLab ответил ошибкой, ссылка сохранена — попробуйте синхронизацию позже"
+        )
+    except Exception:
+        logger.exception("GitLab repo %s lookup failed", path)
+        problem = "GitLab сейчас недоступен, ссылка сохранена — нажмите синхронизацию позже"
+    await db.commit()
+
+    if project.gitlab_project_id:
+        await ensure_project_webhook(project)
+        await sync_members_to_gitlab(db, project)
+    return problem
 
 
 async def trigger_gitlab_repo_creation(db: AsyncSession, project: Project, users: list[User]) -> bool:
