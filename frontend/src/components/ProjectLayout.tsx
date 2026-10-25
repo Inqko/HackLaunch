@@ -6,7 +6,8 @@ import type { ProjectDetail } from "@/api/types";
 import { ProjectContext } from "@/context/ProjectContext";
 import { ROLE_LABELS } from "@/lib/labels";
 import { cn, errorMessage } from "@/lib/utils";
-import { Badge, ErrorText, Spinner } from "./ui";
+import { AttachRepoModal } from "./project/AttachRepoModal";
+import { Badge, Button, ErrorText, Spinner } from "./ui";
 
 const TABS = [
   { to: "", label: "Доска", icon: LayoutDashboard, end: true },
@@ -19,6 +20,7 @@ export default function ProjectLayout() {
   const projectId = Number(useParams().id);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState("");
+  const [repoModalOpen, setRepoModalOpen] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -56,6 +58,11 @@ export default function ProjectLayout() {
                 <GitBranch className="h-4 w-4" /> GitLab не подключен
               </span>
             )}
+            {isCaptain && (
+              <Button size="sm" variant="outline" onClick={() => setRepoModalOpen(true)}>
+                {project.gitlab_repo_url ? "Изменить" : "Прикрепить репозиторий"}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -79,6 +86,7 @@ export default function ProjectLayout() {
       </nav>
 
       <Outlet />
+      {isCaptain && <AttachRepoModal open={repoModalOpen} onClose={() => setRepoModalOpen(false)} />}
     </ProjectContext.Provider>
   );
 }

@@ -17,14 +17,55 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal, get_db
-from app.deps import CAN_EDIT, fetch_project
+from app.deps import CAN_EDIT, CAPTAIN_ONLY, fetch_project
 from app.models import Project, ProjectMember
-from app.schemas import GitLabSyncOut
-from app.services.gitlab_service import sync_issues_from_gitlab, sync_project
+from app.schemas import GitLabConnectIn, GitLabConnectOut, GitLabSyncOut
+from app.services.gitlab_service import (
+    attach_repository,
+    sync_issues_from_gitlab,
+    sync_project,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["gitlab"])
+
+
+@router.put("/api/projects/{project_id}/gitlab/repository", response_model=GitLabConnectOut)
+async def attach_gitlab_repository(
+    project_id: int,
+    data: GitLabConnectIn,
+    _: ProjectMember = Depends(CAPTAIN_ONLY),
+    db: AsyncSession = Depends(get_db),
+):
+    """Прикрепляет репозиторий, который капитан создал сам. Только CAPTAIN.
+
+    Ссылка сохраняется, даже если GitLab сейчас недоступен — тогда `warning`
+    объясняет, почему синхронизация задач пока не работает.
+    """
+    project = await fetch_project(db, project_id)
+    try:
+        warning = await attach_repository(db, project, data.repo_url)
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from None
+    return GitLabConnectOut(
+        gitlab_project_id=project.gitlab_project_id,
+        gitlab_repo_url=project.gitlab_repo_url,
+        warning=warning,
+    )
+
+
+@router.delete("/api/projects/{project_id}/gitlab/repository", status_code=status.HTTP_204_NO_CONTENT)
+async def detach_gitlab_repository(
+    project_id: int,
+    _: ProjectMember = Depends(CAPTAIN_ONLY),
+    db: AsyncSession = Depends(get_db),
+):
+    """Открепляет репозиторий от проекта (сам репозиторий в GitLab не трогаем)."""
+    project = await fetch_project(db, project_id)
+    project.gitlab_project_id = None
+    project.gitlab_repo_url = None
+    await db.commit()
 
 
 @router.post("/api/projects/{project_id}/gitlab/sync", response_model=GitLabSyncOut)
@@ -39,6 +80,11 @@ async def sync_gitlab(
     мог показать понятное сообщение, а не 500.
     """
     project = await fetch_project(db, project_id)
+    if not project.gitlab_project_id and project.gitlab_repo_url:
+        # Ссылку прикрепили, когда GitLab был недоступен — пробуем узнать ID сейчас
+        warning = await attach_repository(db, project, project.gitlab_repo_url)
+        if warning:
+            raise HTTPException(status.HTTP_502_BAD_GATEWAY, warning)
     if not project.gitlab_project_id:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST, "У проекта нет GitLab-репозитория"
