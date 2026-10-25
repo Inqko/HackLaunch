@@ -34,6 +34,7 @@ from app.models import (
 logger = logging.getLogger(__name__)
 
 DEVELOPER_ACCESS_LEVEL = 30
+CONNECT_RETRIES = 3
 
 
 def normalize_gitlab_username(value: str | None) -> str | None:
@@ -137,7 +138,14 @@ class RealGitLabClient:
         self._headers = {"PRIVATE-TOKEN": settings.gitlab_token}
 
     def _client(self) -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=self._base, headers=self._headers, timeout=15)
+        # retries повторяет только неудавшееся соединение (запрос еще не ушел), поэтому
+        # безопасно и для POST; спасает от обрывов TLS через VPN/прокси
+        return httpx.AsyncClient(
+            base_url=self._base,
+            headers=self._headers,
+            timeout=15,
+            transport=httpx.AsyncHTTPTransport(retries=CONNECT_RETRIES),
+        )
 
     async def create_repository(self, path: str, name: str, description: str) -> RepoInfo:
         body = {
@@ -527,14 +535,18 @@ async def _gitlab_username(db: AsyncSession, user_id: int | None) -> str | None:
     return normalize_gitlab_username(user.gitlab_username) if user else None
 
 
-async def trigger_gitlab_repo_creation(db: AsyncSession, project: Project, users: list[User]) -> None:
-    """Создает репозиторий и приглашает участников. Ошибки GitLab не ломают создание проекта."""
+async def trigger_gitlab_repo_creation(db: AsyncSession, project: Project, users: list[User]) -> bool:
+    """Создает репозиторий и приглашает участников. Ошибки GitLab не ломают создание проекта.
+
+    Возвращает False, если репозиторий создать не удалось (его можно создать позже
+    через POST /api/projects/{id}/gitlab/connect).
+    """
     client = get_gitlab_client()
     try:
         repo = await client.create_repository(repo_path(project), project.name, project.description)
     except Exception:
         logger.exception("GitLab repo creation failed for project %s", project.id)
-        return
+        return False
     project.gitlab_project_id = repo.id
     project.gitlab_repo_url = repo.web_url
     await db.commit()
@@ -545,6 +557,7 @@ async def trigger_gitlab_repo_creation(db: AsyncSession, project: Project, users
     for u in users:
         if u.gitlab_username:
             await invite_to_gitlab(project, u)
+    return True
 
 
 async def invite_to_gitlab(project: Project, user: User) -> None:

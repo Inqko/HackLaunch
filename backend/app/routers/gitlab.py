@@ -17,14 +17,39 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import SessionLocal, get_db
-from app.deps import CAN_EDIT, fetch_project
+from app.deps import CAN_EDIT, CAPTAIN_ONLY, fetch_project
 from app.models import Project, ProjectMember
-from app.schemas import GitLabSyncOut
-from app.services.gitlab_service import sync_issues_from_gitlab, sync_project
+from app.schemas import GitLabConnectOut, GitLabSyncOut
+from app.services.gitlab_service import (
+    sync_issues_from_gitlab,
+    sync_project,
+    trigger_gitlab_repo_creation,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["gitlab"])
+
+
+@router.post("/api/projects/{project_id}/gitlab/connect", response_model=GitLabConnectOut)
+async def connect_gitlab(
+    project_id: int,
+    _: ProjectMember = Depends(CAPTAIN_ONLY),
+    db: AsyncSession = Depends(get_db),
+):
+    """Создает репозиторий для проекта, у которого его нет (например, GitLab был
+    недоступен в момент создания проекта). Только CAPTAIN."""
+    project = await fetch_project(db, project_id)
+    if not project.gitlab_project_id:
+        users = [m.user for m in project.members]
+        if not await trigger_gitlab_repo_creation(db, project, users):
+            raise HTTPException(
+                status.HTTP_502_BAD_GATEWAY,
+                "Не удалось создать репозиторий: GitLab недоступен, попробуйте еще раз",
+            )
+    return GitLabConnectOut(
+        gitlab_project_id=project.gitlab_project_id, gitlab_repo_url=project.gitlab_repo_url
+    )
 
 
 @router.post("/api/projects/{project_id}/gitlab/sync", response_model=GitLabSyncOut)

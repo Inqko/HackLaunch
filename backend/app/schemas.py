@@ -179,6 +179,11 @@ class AIStatusOut(BaseModel):
 
 # --- GitLab ---
 
+class GitLabConnectOut(BaseModel):
+    gitlab_project_id: int
+    gitlab_repo_url: str
+
+
 class GitLabSyncOut(BaseModel):
     members_invited: int
     members_skipped: int
