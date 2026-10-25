@@ -25,6 +25,8 @@ export const authApi = {
   login: (data: { email: string; password: string }) => http.post<TokenResponse>("/api/auth/login", data),
   me: () => http.get<User>("/api/users/me"),
   updateMe: (data: { name?: string; gitlab_username?: string }) => http.patch<User>("/api/users/me", data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    http.post<void>("/api/users/me/password", data),
 };
 
 export const projectsApi = {
