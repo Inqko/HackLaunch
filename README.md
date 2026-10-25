@@ -116,6 +116,7 @@ frontend/src/
 | POST | `/api/auth/password-reset/request`, `/confirm` | все |
 | GET/POST | `/api/projects` | авторизованный (создатель → CAPTAIN) |
 | GET | `/api/projects/{id}` | участник проекта (+ `my_role`) |
+| DELETE | `/api/projects/{id}` | CAPTAIN (задачи и материалы удаляются, GitLab-репозиторий остаётся) |
 | POST | `/api/projects/{id}/members` | CAPTAIN |
 | PATCH/DELETE | `/api/projects/{id}/members/{user_id}` | CAPTAIN |
 | GET | `/api/projects/{id}/tasks` | участник (без `AI_DRAFT`) |

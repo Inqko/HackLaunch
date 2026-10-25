@@ -1,4 +1,4 @@
-import { BarChart3, GitBranch, LayoutDashboard, ListTodo, Users } from "lucide-react";
+import { BarChart3, GitBranch, LayoutDashboard, ListTodo, Trash2, Users } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useParams } from "react-router-dom";
 import { projectsApi } from "@/api/endpoints";
@@ -7,6 +7,7 @@ import { ProjectContext } from "@/context/ProjectContext";
 import { ROLE_LABELS } from "@/lib/labels";
 import { cn, errorMessage } from "@/lib/utils";
 import { AttachRepoModal } from "./project/AttachRepoModal";
+import { DeleteProjectModal } from "./project/DeleteProjectModal";
 import { Badge, Button, ErrorText, Spinner } from "./ui";
 
 const TABS = [
@@ -21,6 +22,7 @@ export default function ProjectLayout() {
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [error, setError] = useState("");
   const [repoModalOpen, setRepoModalOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const reload = useCallback(async () => {
     try {
@@ -65,7 +67,13 @@ export default function ProjectLayout() {
             )}
           </div>
         </div>
+        {isCaptain && (
+          <Button variant="outline" size="sm" onClick={() => setDeleting(true)} className="text-red-600 hover:bg-red-50">
+            <Trash2 className="h-4 w-4" /> Удалить проект
+          </Button>
+        )}
       </div>
+      {isCaptain && <DeleteProjectModal project={project} open={deleting} onClose={() => setDeleting(false)} />}
 
       <nav className="mb-6 flex gap-1 overflow-x-auto border-b border-slate-200">
         {TABS.map(({ to, label, icon: Icon, end }) => (

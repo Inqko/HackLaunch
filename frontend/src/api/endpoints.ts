@@ -47,6 +47,7 @@ export const projectsApi = {
   updateMember: (id: number, userId: number, data: { role?: ProjectRole; specialization?: Specialization }) =>
     http.patch<Member>(`/api/projects/${id}/members/${userId}`, data),
   removeMember: (id: number, userId: number) => http.del(`/api/projects/${id}/members/${userId}`),
+  remove: (id: number) => http.del(`/api/projects/${id}`),
 };
 
 export const tasksApi = {

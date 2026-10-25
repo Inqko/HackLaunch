@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.deps import ANY_MEMBER, CAPTAIN_ONLY, fetch_project, get_current_user, get_membership
-from app.models import Project, ProjectMember, ProjectRole, User
+from app.models import Project, ProjectMaterial, ProjectMember, ProjectRole, Task, User
 from app.schemas import (
     MemberAdd,
     MemberOut,
@@ -101,6 +101,22 @@ async def get_project(
     project_id: int, membership: ProjectMember = Depends(ANY_MEMBER), db: AsyncSession = Depends(get_db)
 ):
     return project_detail(await fetch_project(db, project_id), membership.role)
+
+
+@router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_project(
+    project_id: int,
+    _: ProjectMember = Depends(CAPTAIN_ONLY),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await fetch_project(db, project_id)
+    # SQLite без PRAGMA foreign_keys не выполняет ON DELETE CASCADE, поэтому чистим явно.
+    # Репозиторий в GitLab не трогаем: код команды должен пережить удаление проекта
+    await db.execute(delete(Task).where(Task.project_id == project_id))
+    await db.execute(delete(ProjectMaterial).where(ProjectMaterial.project_id == project_id))
+    await db.delete(project)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/{project_id}/members", response_model=MemberOut, status_code=status.HTTP_201_CREATED)
