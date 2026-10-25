@@ -60,6 +60,18 @@ def _active_provider() -> str | None:
     return provider if keys.get(provider) else None
 
 
+def _extract_json(content: str) -> str:
+    # Провайдеры с JSON mode не всегда строги: бывают ```json-обертки и мусор после объекта
+    start = content.find("{")
+    if start == -1:
+        return content
+    try:
+        _, end = json.JSONDecoder().raw_decode(content, start)
+    except json.JSONDecodeError:
+        return content[start:]
+    return content[start:end]
+
+
 async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
     # DeepSeek поддерживает только JSON mode без строгой схемы:
     # передаем JSON Schema в промпте и валидируем ответ Pydantic, при ошибке — одна повторная попытка
@@ -71,23 +83,27 @@ async def _ask_deepseek(prompt: str, schema: type[BaseModel]) -> BaseModel:
         },
         {"role": "user", "content": prompt},
     ]
-    async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=120) as client:
+    body = {
+        "model": settings.deepseek_model,
+        "response_format": {"type": "json_object"},
+        "temperature": 0.3,
+        # С запасом: у reasoning-моделей рассуждения тоже расходуют лимит
+        "max_tokens": 16000,
+    }
+    if settings.deepseek_disable_thinking:
+        # Разные chat-шаблоны читают разные ключи, лишние игнорируются
+        body["chat_template_kwargs"] = {"thinking": False, "enable_thinking": False}
+    async with httpx.AsyncClient(base_url=settings.deepseek_base_url, timeout=180) as client:
         for attempt in range(2):
             resp = await client.post(
                 "/chat/completions",
                 headers={"Authorization": f"Bearer {settings.deepseek_api_key}"},
-                json={
-                    "model": settings.deepseek_model,
-                    "messages": messages,
-                    "response_format": {"type": "json_object"},
-                    "temperature": 0.3,
-                    "max_tokens": 4000,
-                },
+                json={**body, "messages": messages},
             )
             resp.raise_for_status()
             content = resp.json()["choices"][0]["message"]["content"] or ""
             try:
-                return schema.model_validate_json(content)
+                return schema.model_validate_json(_extract_json(content))
             except ValidationError as e:
                 if attempt:
                     raise

@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-chat"
+    # Для self-hosted/vLLM провайдеров: отключает «размышления» reasoning-модели, ответ в разы быстрее
+    deepseek_disable_thinking: bool = False
 
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
